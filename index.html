@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSS View</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sidebar-w: 280px;
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface-hover: #f3f4f6;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-muted: #636c76;
+      --accent: #0969da;
+      --accent-text: #ffffff;
+      --badge-bg: #0969da;
+      --badge-text: #ffffff;
+      --error: #cf222e;
+      --error-bg: #fff1f0;
+      --radius: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface-hover: #21262d;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-muted: #7d8590;
+        --accent: #58a6ff;
+        --accent-text: #0d1117;
+        --badge-bg: #1f6feb;
+        --badge-text: #ffffff;
+        --error: #f85149;
+        --error-bg: #160b0b;
+        --shadow: 0 1px 3px rgba(0,0,0,.4);
+      }
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Layout ────────────────────────────────────── */
+    .app {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      height: 100vh;
+    }
+
+    /* ── Sidebar ───────────────────────────────────── */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.3px;
+      user-select: none;
+    }
+
+    .btn-icon {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 15px;
+      height: 28px;
+      width: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .btn-icon:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+    .btn-icon:disabled { opacity: .4; cursor: default; }
+
+    /* ── Feed nav ──────────────────────────────────── */
+    .feed-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .feed-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      padding: 7px 10px;
+      background: none;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-align: left;
+      color: var(--text);
+      font-size: 13px;
+      min-width: 0;
+      transition: background .1s;
+    }
+    .feed-nav-item:hover { background: var(--surface-hover); }
+    .feed-nav-item.active {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+    .feed-nav-item.active .badge {
+      background: rgba(255,255,255,.25);
+      color: #fff;
+    }
+    .feed-nav-item.active .feed-nav-icon { color: rgba(255,255,255,.7); }
+    .feed-nav-item.has-error .feed-nav-icon { color: var(--error); }
+
+    .feed-nav-item-wrapper {
+      display: flex;
+      align-items: center;
+      border-radius: var(--radius);
+    }
+    .feed-nav-item-wrapper .feed-nav-item { flex: 1; min-width: 0; }
+
+    .feed-nav-icon {
+      font-size: 8px;
+      flex-shrink: 0;
+      width: 14px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .feed-nav-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; animation: spin .8s linear infinite; font-size: 13px; }
+    .error-icon { font-weight: 700; color: var(--error); font-size: 12px; }
+
+    .badge {
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .btn-remove {
+      background: none;
+      border: none;
+      color: transparent;
+      cursor: pointer;
+      font-size: 16px;
+      height: 26px;
+      width: 26px;
+      border-radius: var(--radius);
+      flex-shrink: 0;
+      margin-right: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .1s, color .1s;
+    }
+    .feed-nav-item-wrapper:hover .btn-remove { color: var(--text-muted); }
+    .btn-remove:hover { background: var(--error-bg); color: var(--error) !important; }
+
+    /* ── Add feed ──────────────────────────────────── */
+    .add-feed {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .feed-input {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+      min-width: 0;
+    }
+    .feed-input:focus { border-color: var(--accent); }
+    .feed-input::placeholder { color: var(--text-muted); }
+
+    .btn-add {
+      padding: 6px 14px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: opacity .15s;
+    }
+    .btn-add:hover:not(:disabled) { opacity: .85; }
+    .btn-add:disabled { opacity: .45; cursor: default; }
+
+    /* ── Main content ──────────────────────────────── */
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .main-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .main-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .btn-ghost {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 12px;
+      transition: background .12s, color .12s;
+    }
+    .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+
+    /* ── Errors ────────────────────────────────────── */
+    .error-banner {
+      background: var(--error-bg);
+      border-bottom: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+      padding: 8px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .error-item {
+      font-size: 12px;
+      color: var(--error);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .error-label { font-weight: 600; }
+
+    .btn-retry {
+      padding: 2px 10px;
+      font-size: 11px;
+      background: none;
+      border: 1px solid var(--error);
+      border-radius: var(--radius);
+      color: var(--error);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .btn-retry:hover { background: var(--error); color: #fff; }
+
+    /* ── Article list ──────────────────────────────── */
+    .article-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .article-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      transition: box-shadow .15s;
+    }
+    .article-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.1); }
+    .article-card.is-read { opacity: .55; }
+
+    .article-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .article-feed-name {
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+
+    .article-title {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      transition: color .1s;
+    }
+    .article-title:hover { color: var(--accent); }
+    .article-card.is-read .article-title { color: var(--text-muted); }
+
+    .article-description {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin-bottom: 10px;
+    }
+
+    .btn-mark-read {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 3px 10px;
+      transition: background .1s, color .1s;
+    }
+    .btn-mark-read:hover { background: var(--surface-hover); color: var(--text); }
+
+    /* ── Loading state ─────────────────────────────── */
+    .loading-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+    .loading-spinner {
+      font-size: 32px;
+      animation: spin .8s linear infinite;
+    }
+
+    /* ── Empty state ───────────────────────────────── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 32px;
+      color: var(--text-muted);
+    }
+
+    .empty-icon { font-size: 48px; margin-bottom: 16px; }
+
+    .empty-state h3 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .empty-state p { font-size: 13px; margin-bottom: 8px; }
+
+    .suggestions {
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-top: 16px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .suggestions-title {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    .suggestions ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+
+    .suggestions li {
+      font-size: 12px;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    /* ── Scrollbars ────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="elm.js"></script>
+  <script>
+    const KEY_FEEDS = 'rss-view-feeds';
+    const KEY_READ  = 'rss-view-read';
+
+    function load(key) {
+      try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+      catch { return []; }
+    }
+
+    const app = Elm.Main.init({
+      node: document.getElementById('app'),
+      flags: {
+        feedUrls:     load(KEY_FEEDS),
+        readArticles: load(KEY_READ)
+      }
+    });
+
+    app.ports.saveFeedUrls.subscribe(urls => {
+      localStorage.setItem(KEY_FEEDS, JSON.stringify(urls));
+    });
+
+    app.ports.saveReadArticles.subscribe(articles => {
+      localStorage.setItem(KEY_READ, JSON.stringify(articles));
+    });
+  </script>
+</body>
+</html>
