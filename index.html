@@ -449,7 +449,7 @@
 </head>
 <body>
   <div id="app"></div>
-  <script src="elm.js"></script>
+  <script src="./elm.js" onerror="document.getElementById('app').innerHTML='<p style=\'padding:24px;font-family:monospace;color:#cf222e\'>Failed to load elm.js — check GitHub Pages deployment.</p>'"></script>
   <script>
     const KEY_FEEDS = 'rss-view-feeds';
     const KEY_READ  = 'rss-view-read';
@@ -459,21 +459,29 @@
       catch { return []; }
     }
 
-    const app = Elm.Main.init({
-      node: document.getElementById('app'),
-      flags: {
-        feedUrls:     load(KEY_FEEDS),
-        readArticles: load(KEY_READ)
-      }
-    });
+    try {
+      if (typeof Elm === 'undefined') throw new Error('Elm runtime not loaded (elm.js missing or failed)');
+      if (!Elm.Main) throw new Error('Elm.Main not found — module name mismatch');
 
-    app.ports.saveFeedUrls.subscribe(urls => {
-      localStorage.setItem(KEY_FEEDS, JSON.stringify(urls));
-    });
+      const app = Elm.Main.init({
+        node: document.getElementById('app'),
+        flags: {
+          feedUrls:     load(KEY_FEEDS),
+          readArticles: load(KEY_READ)
+        }
+      });
 
-    app.ports.saveReadArticles.subscribe(articles => {
-      localStorage.setItem(KEY_READ, JSON.stringify(articles));
-    });
+      app.ports.saveFeedUrls.subscribe(urls => {
+        localStorage.setItem(KEY_FEEDS, JSON.stringify(urls));
+      });
+
+      app.ports.saveReadArticles.subscribe(articles => {
+        localStorage.setItem(KEY_READ, JSON.stringify(articles));
+      });
+    } catch (e) {
+      document.getElementById('app').innerHTML =
+        '<p style="padding:24px;font-family:monospace;color:#cf222e">RSS View init error: ' + e.message + '</p>';
+    }
   </script>
 </body>
 </html>
