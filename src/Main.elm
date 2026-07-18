@@ -443,8 +443,6 @@ viewSidebar model =
                 ]
                 [ text "↻" ]
             ]
-        , nav [ class "feed-nav" ]
-            (viewAllFeedsItem model :: List.map (viewFeedNavItem model) model.feedUrls)
         , div [ class "add-feed" ]
             [ input
                 [ type_ "url"
@@ -462,6 +460,8 @@ viewSidebar model =
                 ]
                 [ text "Add" ]
             ]
+        , nav [ class "feed-nav" ]
+            (viewAllFeedsItem model :: List.map (viewFeedNavItem model) model.feedUrls)
         ]
 
 
