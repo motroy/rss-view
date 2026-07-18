@@ -60,6 +60,16 @@
       height: 100vh;
     }
 
+    .app.sidebar-collapsed {
+      grid-template-columns: 0 1fr;
+    }
+
+    .app.sidebar-collapsed .sidebar {
+      min-width: 0;
+      overflow: hidden;
+      border-right: none;
+    }
+
     /* ── Sidebar ───────────────────────────────────── */
     .sidebar {
       background: var(--surface);

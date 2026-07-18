@@ -48,6 +48,7 @@ type alias Model =
     , errors : Dict String String
     , readArticles : Set String
     , activeFilter : Maybe String
+    , sidebarOpen : Bool
     }
 
 
@@ -84,6 +85,7 @@ init flags =
       , errors = Dict.empty
       , readArticles = readArticles
       , activeFilter = Nothing
+      , sidebarOpen = True
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -103,6 +105,7 @@ type Msg
     | SetFilter (Maybe String)
     | RefreshAll
     | RefreshFeed String
+    | ToggleSidebar
 
 
 type alias RssFeedResponse =
@@ -247,6 +250,9 @@ update msg model =
             ( { model | loading = Set.insert url model.loading }
             , fetchFeed url
             )
+
+        ToggleSidebar ->
+            ( { model | sidebarOpen = not model.sidebarOpen }, Cmd.none )
 
 
 
@@ -424,7 +430,7 @@ onEnter msg =
 
 view : Model -> Html Msg
 view model =
-    div [ class "app" ]
+    div [ classList [ ( "app", True ), ( "sidebar-collapsed", not model.sidebarOpen ) ] ]
         [ viewSidebar model
         , viewMainContent model
         ]
@@ -442,6 +448,12 @@ viewSidebar model =
                 , title "Refresh all feeds"
                 ]
                 [ text "↻" ]
+            , button
+                [ class "btn-icon"
+                , onClick ToggleSidebar
+                , title "Collapse sidebar"
+                ]
+                [ text "‹" ]
             ]
         , div [ class "add-feed" ]
             [ input
@@ -574,7 +586,17 @@ viewMainHeader model =
                         |> Maybe.withDefault (shortenUrl url)
     in
     div [ class "main-header" ]
-        [ h2 [ class "main-title" ] [ text pageTitle ]
+        [ if not model.sidebarOpen then
+            button
+                [ class "btn-icon"
+                , onClick ToggleSidebar
+                , title "Expand sidebar"
+                ]
+                [ text "›" ]
+
+          else
+            text ""
+        , h2 [ class "main-title" ] [ text pageTitle ]
         , div [ class "main-actions" ]
             [ if unreadCount > 0 then
                 button
