@@ -51,8 +51,9 @@ type alias Model =
     , errors : Dict String String
     , readArticles : Set String
     , activeFilter : Maybe String
-    , sidebarOpen : Bool
-    , selectedArticle : Maybe Article
+    , sidebarMini : Bool
+    , openTabs : List Article
+    , activeTabLink : Maybe String
     }
 
 
@@ -90,8 +91,9 @@ init flags =
       , errors = Dict.empty
       , readArticles = readArticles
       , activeFilter = Nothing
-      , sidebarOpen = True
-      , selectedArticle = Nothing
+      , sidebarMini = False
+      , openTabs = []
+      , activeTabLink = Nothing
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -113,7 +115,8 @@ type Msg
     | RefreshFeed String
     | ToggleSidebar
     | SelectArticle Article
-    | CloseArticle
+    | CloseTab String
+    | ActivateTab (Maybe String)
 
 
 type alias RssFeedResponse =
@@ -262,22 +265,74 @@ update msg model =
             )
 
         ToggleSidebar ->
-            ( { model | sidebarOpen = not model.sidebarOpen }, Cmd.none )
+            ( { model | sidebarMini = not model.sidebarMini }, Cmd.none )
 
         SelectArticle art ->
             let
                 newRead =
                     Set.insert art.link model.readArticles
+
+                alreadyOpen =
+                    List.any (\a -> a.link == art.link) model.openTabs
+
+                newTabs =
+                    if alreadyOpen then
+                        model.openTabs
+
+                    else
+                        model.openTabs ++ [ art ]
             in
-            ( { model | selectedArticle = Just art, readArticles = newRead }
+            ( { model
+                | openTabs = newTabs
+                , activeTabLink = Just art.link
+                , readArticles = newRead
+              }
             , Cmd.batch
                 [ renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string art.content ) ])
                 , saveReadArticles (E.list E.string (Set.toList newRead))
                 ]
             )
 
-        CloseArticle ->
-            ( { model | selectedArticle = Nothing }, Cmd.none )
+        CloseTab link ->
+            let
+                newTabs =
+                    List.filter (\a -> a.link /= link) model.openTabs
+
+                newActiveLink =
+                    if model.activeTabLink /= Just link then
+                        model.activeTabLink
+
+                    else
+                        List.head newTabs |> Maybe.map .link
+            in
+            ( { model | openTabs = newTabs, activeTabLink = newActiveLink }
+            , case newActiveLink of
+                Just l ->
+                    case List.head (List.filter (\a -> a.link == l) newTabs) of
+                        Just a ->
+                            renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string a.content ) ])
+
+                        Nothing ->
+                            Cmd.none
+
+                Nothing ->
+                    Cmd.none
+            )
+
+        ActivateTab maybeLink ->
+            ( { model | activeTabLink = maybeLink }
+            , case maybeLink of
+                Just link ->
+                    case List.head (List.filter (\a -> a.link == link) model.openTabs) of
+                        Just art ->
+                            renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string art.content ) ])
+
+                        Nothing ->
+                            Cmd.none
+
+                Nothing ->
+                    Cmd.none
+            )
 
 
 
@@ -456,7 +511,7 @@ onEnter msg =
 
 view : Model -> Html Msg
 view model =
-    div [ classList [ ( "app", True ), ( "sidebar-collapsed", not model.sidebarOpen ) ] ]
+    div [ classList [ ( "app", True ), ( "sidebar-mini", model.sidebarMini ) ] ]
         [ viewSidebar model
         , viewMainContent model
         ]
@@ -477,9 +532,22 @@ viewSidebar model =
             , button
                 [ class "btn-icon"
                 , onClick ToggleSidebar
-                , title "Collapse sidebar"
+                , title
+                    (if model.sidebarMini then
+                        "Expand sidebar"
+
+                     else
+                        "Collapse sidebar"
+                    )
                 ]
-                [ text "‹" ]
+                [ text
+                    (if model.sidebarMini then
+                        "›"
+
+                     else
+                        "‹"
+                    )
+                ]
             ]
         , div [ class "add-feed" ]
             [ input
@@ -516,6 +584,7 @@ viewAllFeedsItem model =
     button
         [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
         , onClick (SetFilter Nothing)
+        , title "All Feeds"
         ]
         [ span [ class "feed-nav-icon" ] [ text "●" ]
         , span [ class "feed-nav-title" ] [ text "All Feeds" ]
@@ -527,15 +596,55 @@ viewAllFeedsItem model =
         ]
 
 
+viewTabBar : Model -> Html Msg
+viewTabBar model =
+    div [ class "tab-bar" ]
+        (button
+            [ classList [ ( "tab-item", True ), ( "tab-active", model.activeTabLink == Nothing ) ]
+            , onClick (ActivateTab Nothing)
+            ]
+            [ text "Articles" ]
+            :: List.map
+                (\art ->
+                    let
+                        isActive =
+                            model.activeTabLink == Just art.link
+
+                        label =
+                            if String.length art.title > 28 then
+                                String.left 25 art.title ++ "…"
+
+                            else
+                                art.title
+                    in
+                    div [ classList [ ( "tab-item", True ), ( "tab-active", isActive ) ] ]
+                        [ button
+                            [ class "tab-label"
+                            , onClick (ActivateTab (Just art.link))
+                            , title art.title
+                            ]
+                            [ text label ]
+                        , button
+                            [ class "tab-close"
+                            , onClick (CloseTab art.link)
+                            , title "Close tab"
+                            ]
+                            [ text "×" ]
+                        ]
+                )
+                model.openTabs
+        )
+
+
 viewArticleReader : Article -> Html Msg
 viewArticleReader art =
     div [ class "article-reader" ]
         [ div [ class "reader-toolbar" ]
             [ button
                 [ class "btn-ghost"
-                , onClick CloseArticle
+                , onClick (CloseTab art.link)
                 ]
-                [ text "← Back" ]
+                [ text "× Close" ]
             , a
                 [ href art.link
                 , target "_blank"
@@ -592,6 +701,7 @@ viewFeedNavItem model url =
                 , ( "has-error", hasError )
                 ]
             , onClick (SetFilter (Just url))
+            , title feedTitle
             ]
             [ span [ class "feed-nav-icon" ]
                 [ if isLoading then
@@ -621,18 +731,33 @@ viewFeedNavItem model url =
 
 viewMainContent : Model -> Html Msg
 viewMainContent model =
+    let
+        headerArea =
+            if List.isEmpty model.openTabs then
+                viewMainHeader model
+
+            else
+                viewTabBar model
+
+        contentArea =
+            case model.activeTabLink of
+                Nothing ->
+                    viewArticleList model
+
+                Just link ->
+                    case List.head (List.filter (\a -> a.link == link) model.openTabs) of
+                        Just art ->
+                            viewArticleReader art
+
+                        Nothing ->
+                            viewArticleList model
+    in
     main_
         [ class "main" ]
-        (case model.selectedArticle of
-            Just art ->
-                [ viewArticleReader art ]
-
-            Nothing ->
-                [ viewMainHeader model
-                , viewErrors model
-                , viewArticleList model
-                ]
-        )
+        [ headerArea
+        , viewErrors model
+        , contentArea
+        ]
 
 
 viewMainHeader : Model -> Html Msg
@@ -655,17 +780,7 @@ viewMainHeader model =
                         |> Maybe.withDefault (shortenUrl url)
     in
     div [ class "main-header" ]
-        [ if not model.sidebarOpen then
-            button
-                [ class "btn-icon"
-                , onClick ToggleSidebar
-                , title "Expand sidebar"
-                ]
-                [ text "›" ]
-
-          else
-            text ""
-        , h2 [ class "main-title" ] [ text pageTitle ]
+        [ h2 [ class "main-title" ] [ text pageTitle ]
         , div [ class "main-actions" ]
             [ if unreadCount > 0 then
                 button
