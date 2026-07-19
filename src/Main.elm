@@ -39,6 +39,15 @@ port saveArticleLabels : E.Value -> Cmd msg
 port saveCustomFeedTitles : E.Value -> Cmd msg
 
 
+port saveTabColors : E.Value -> Cmd msg
+
+
+port saveLabelColors : E.Value -> Cmd msg
+
+
+port setTheme : String -> Cmd msg
+
+
 
 -- MAIN
 
@@ -84,6 +93,10 @@ type alias Model =
     , customFeedTitles : Dict String String
     , editingFeedName : Maybe String
     , feedNameInput : String
+    , darkMode : Bool
+    , tabColors : Dict String String
+    , labelColors : Dict String String
+    , colorPickerFor : Maybe String
     }
 
 
@@ -133,6 +146,21 @@ init flags =
             flags
                 |> D.decodeValue (D.field "customFeedTitles" (D.dict D.string))
                 |> Result.withDefault Dict.empty
+
+        darkMode =
+            flags
+                |> D.decodeValue (D.field "darkMode" D.bool)
+                |> Result.withDefault False
+
+        tabColors =
+            flags
+                |> D.decodeValue (D.field "tabColors" (D.dict D.string))
+                |> Result.withDefault Dict.empty
+
+        labelColors =
+            flags
+                |> D.decodeValue (D.field "labelColors" (D.dict D.string))
+                |> Result.withDefault Dict.empty
     in
     ( { feedUrls = feedUrls
       , articles = []
@@ -154,6 +182,10 @@ init flags =
       , customFeedTitles = customFeedTitles
       , editingFeedName = Nothing
       , feedNameInput = ""
+      , darkMode = darkMode
+      , tabColors = tabColors
+      , labelColors = labelColors
+      , colorPickerFor = Nothing
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -192,6 +224,13 @@ type Msg
     | SaveFeedName String
     | CancelFeedNameEdit
     | ResetFeedName String
+    | ToggleDarkMode
+    | SetTabColor String String
+    | ClearTabColor String
+    | SetLabelColor String String
+    | ClearLabelColor String
+    | OpenColorPicker String
+    | CloseColorPicker
 
 
 type alias RssFeedResponse =
@@ -249,7 +288,11 @@ update msg model =
                 newFilter =
                     case model.activeFilter of
                         ByFeed u ->
-                            if u == url then AllFeeds else model.activeFilter
+                            if u == url then
+                                AllFeeds
+
+                            else
+                                model.activeFilter
 
                         _ ->
                             model.activeFilter
@@ -335,7 +378,7 @@ update msg model =
             )
 
         SetFilter f ->
-            ( { model | activeFilter = f }, Cmd.none )
+            ( { model | activeFilter = f, colorPickerFor = Nothing }, Cmd.none )
 
         RefreshAll ->
             ( { model | loading = Set.fromList model.feedUrls }
@@ -370,6 +413,7 @@ update msg model =
                 , activeTabLink = Just art.link
                 , readArticles = newRead
                 , labelInput = ""
+                , colorPickerFor = Nothing
               }
             , Cmd.batch
                 [ renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string art.content ) ])
@@ -389,7 +433,7 @@ update msg model =
                     else
                         List.head newTabs |> Maybe.map .link
             in
-            ( { model | openTabs = newTabs, activeTabLink = newActiveLink }
+            ( { model | openTabs = newTabs, activeTabLink = newActiveLink, colorPickerFor = Nothing }
             , case newActiveLink of
                 Just l ->
                     case List.head (List.filter (\a -> a.link == l) newTabs) of
@@ -404,7 +448,7 @@ update msg model =
             )
 
         ActivateTab maybeLink ->
-            ( { model | activeTabLink = maybeLink, labelInput = "" }
+            ( { model | activeTabLink = maybeLink, labelInput = "", colorPickerFor = Nothing }
             , case maybeLink of
                 Just link ->
                     case List.head (List.filter (\a -> a.link == link) model.openTabs) of
@@ -595,9 +639,81 @@ update msg model =
             , saveCustomFeedTitles (E.dict identity E.string newCustom)
             )
 
+        ToggleDarkMode ->
+            let
+                newDark =
+                    not model.darkMode
+
+                theme =
+                    if newDark then
+                        "dark"
+
+                    else
+                        "light"
+            in
+            ( { model | darkMode = newDark }
+            , setTheme theme
+            )
+
+        SetTabColor link color ->
+            let
+                newColors =
+                    Dict.insert link color model.tabColors
+            in
+            ( { model | tabColors = newColors, colorPickerFor = Nothing }
+            , saveTabColors (E.dict identity E.string newColors)
+            )
+
+        ClearTabColor link ->
+            let
+                newColors =
+                    Dict.remove link model.tabColors
+            in
+            ( { model | tabColors = newColors, colorPickerFor = Nothing }
+            , saveTabColors (E.dict identity E.string newColors)
+            )
+
+        SetLabelColor label color ->
+            let
+                newColors =
+                    Dict.insert label color model.labelColors
+            in
+            ( { model | labelColors = newColors, colorPickerFor = Nothing }
+            , saveLabelColors (E.dict identity E.string newColors)
+            )
+
+        ClearLabelColor label ->
+            let
+                newColors =
+                    Dict.remove label model.labelColors
+            in
+            ( { model | labelColors = newColors, colorPickerFor = Nothing }
+            , saveLabelColors (E.dict identity E.string newColors)
+            )
+
+        OpenColorPicker key ->
+            ( { model
+                | colorPickerFor =
+                    if model.colorPickerFor == Just key then
+                        Nothing
+
+                    else
+                        Just key
+              }
+            , Cmd.none
+            )
+
+        CloseColorPicker ->
+            ( { model | colorPickerFor = Nothing }, Cmd.none )
+
 
 
 -- HELPERS
+
+
+presetColors : List String
+presetColors =
+    [ "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280" ]
 
 
 sortArticles : List Article -> List Article
@@ -842,10 +958,43 @@ onEnter msg =
 
 view : Model -> Html Msg
 view model =
-    div [ classList [ ( "app", True ), ( "sidebar-mini", model.sidebarMini ) ] ]
-        [ viewSidebar model
-        , viewMainContent model
+    div []
+        [ div [ classList [ ( "app", True ), ( "sidebar-mini", model.sidebarMini ) ] ]
+            [ viewSidebar model
+            , viewMainContent model
+            ]
+        , button
+            [ class "theme-toggle-btn"
+            , onClick ToggleDarkMode
+            , title (if model.darkMode then "Switch to light mode" else "Switch to dark mode")
+            ]
+            [ text (if model.darkMode then "☀" else "☽") ]
         ]
+
+
+viewColorPalette : String -> Maybe String -> (String -> Msg) -> Msg -> Html Msg
+viewColorPalette key currentColor onSetColor onClear =
+    div [ class "color-palette" ]
+        (List.map
+            (\c ->
+                button
+                    [ class "color-swatch"
+                    , style "background" c
+                    , style "outline" (if Just c == currentColor then "2px solid var(--text)" else "none")
+                    , onClick (onSetColor c)
+                    , title c
+                    ]
+                    []
+            )
+            presetColors
+            ++ [ button
+                    [ class "color-swatch color-swatch-clear"
+                    , onClick onClear
+                    , title "Remove color"
+                    ]
+                    [ text "×" ]
+               ]
+        )
 
 
 viewSidebar : Model -> Html Msg
@@ -950,14 +1099,26 @@ viewSidebar model =
 
 
 viewTopicHeader : Model -> String -> Int -> Bool -> Html Msg
-viewTopicHeader model topicName feedCount collapsed =
+viewTopicHeader _ topicName feedCount collapsed =
     div [ class "topic-header" ]
         [ button
             [ class "topic-toggle"
             , onClick (ToggleTopic topicName)
-            , title (if collapsed then "Expand" else "Collapse")
+            , title
+                (if collapsed then
+                    "Expand"
+
+                 else
+                    "Collapse"
+                )
             ]
-            [ text (if collapsed then "▶" else "▼")
+            [ text
+                (if collapsed then
+                    "▶"
+
+                 else
+                    "▼"
+                )
             , span [ class "topic-name" ] [ text topicName ]
             , span [ class "topic-count" ] [ text (String.fromInt feedCount) ]
             ]
@@ -1049,16 +1210,46 @@ viewLabelNavItem model label =
                 |> List.concat
                 |> List.filter ((==) label)
                 |> List.length
+
+        labelColor =
+            Dict.get label model.labelColors
+
+        pickerKey =
+            "label-nav:" ++ label
+
+        pickerOpen =
+            model.colorPickerFor == Just pickerKey
     in
-    button
-        [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
-        , onClick (SetFilter (ByLabel label))
-        , title label
-        ]
-        [ span [ class "feed-nav-icon" ] [ text "⬡" ]
-        , span [ class "feed-nav-title" ] [ text label ]
-        , if count > 0 then
-            span [ class "badge" ] [ text (String.fromInt count) ]
+    div [ class "label-nav-wrapper" ]
+        [ button
+            [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
+            , onClick (SetFilter (ByLabel label))
+            , title label
+            ]
+            [ span
+                [ class "feed-nav-icon label-color-dot"
+                , style "color" (labelColor |> Maybe.withDefault "var(--text-muted)")
+                ]
+                [ text "⬟" ]
+            , span [ class "feed-nav-title" ] [ text label ]
+            , if count > 0 then
+                span [ class "badge" ] [ text (String.fromInt count) ]
+
+              else
+                text ""
+            ]
+        , button
+            [ class "btn-color-dot"
+            , onClick (OpenColorPicker pickerKey)
+            , title "Set label color"
+            , style "color" (labelColor |> Maybe.withDefault "var(--text-muted)")
+            ]
+            [ text "⬟" ]
+        , if pickerOpen then
+            viewColorPalette pickerKey
+                labelColor
+                (SetLabelColor label)
+                (ClearLabelColor label)
 
           else
             text ""
@@ -1228,9 +1419,26 @@ viewTabBar model =
 
                             else
                                 art.title
+
+                        tabColor =
+                            Dict.get art.link model.tabColors
                     in
-                    div [ classList [ ( "tab-item", True ), ( "tab-active", isActive ) ] ]
-                        [ button
+                    div
+                        [ classList [ ( "tab-item", True ), ( "tab-active", isActive ) ]
+                        , style "border-bottom-color"
+                            (tabColor |> Maybe.withDefault (if isActive then "var(--accent)" else "transparent"))
+                        ]
+                        [ case tabColor of
+                            Just c ->
+                                span
+                                    [ class "tab-color-dot"
+                                    , style "background" c
+                                    ]
+                                    []
+
+                            Nothing ->
+                                text ""
+                        , button
                             [ class "tab-label"
                             , onClick (ActivateTab (Just art.link))
                             , title art.title
@@ -1256,6 +1464,15 @@ viewArticleReader model art =
 
         labels =
             Dict.get art.link model.articleLabels |> Maybe.withDefault []
+
+        tabColor =
+            Dict.get art.link model.tabColors
+
+        tabPickerKey =
+            "tab:" ++ art.link
+
+        tabPickerOpen =
+            model.colorPickerFor == Just tabPickerKey
     in
     div [ class "article-reader" ]
         [ div [ class "reader-toolbar" ]
@@ -1267,9 +1484,22 @@ viewArticleReader model art =
             , button
                 [ classList [ ( "btn-ghost", True ), ( "btn-fav", True ), ( "is-fav", isFav ) ]
                 , onClick (ToggleFavourite art.link)
-                , title (if isFav then "Remove from starred" else "Add to starred")
+                , title
+                    (if isFav then
+                        "Remove from starred"
+
+                     else
+                        "Add to starred"
+                    )
                 ]
-                [ text (if isFav then "★ Starred" else "☆ Star") ]
+                [ text
+                    (if isFav then
+                        "★ Starred"
+
+                     else
+                        "☆ Star"
+                    )
+                ]
             , a
                 [ href art.link
                 , target "_blank"
@@ -1283,6 +1513,23 @@ viewArticleReader model art =
                 , title "Save as PDF / Print"
                 ]
                 [ text "⎙ Save as PDF" ]
+            , div [ class "toolbar-separator" ] []
+            , button
+                [ class "btn-tab-color"
+                , onClick (OpenColorPicker tabPickerKey)
+                , title "Tab color"
+                , style "background" (tabColor |> Maybe.withDefault "var(--surface-hover)")
+                , style "border-color" (tabColor |> Maybe.withDefault "var(--border)")
+                ]
+                []
+            , if tabPickerOpen then
+                viewColorPalette tabPickerKey
+                    tabColor
+                    (SetTabColor art.link)
+                    (ClearTabColor art.link)
+
+              else
+                text ""
             ]
         , div [ class "reader-body" ]
             [ h1 [ class "reader-title" ] [ text art.title ]
@@ -1300,10 +1547,36 @@ viewArticleReader model art =
                     text ""
                 ]
             , div [ class "reader-labels" ]
-                (List.map
+                (List.concatMap
                     (\label ->
-                        span [ class "label-chip" ]
-                            [ text label
+                        let
+                            labelColor =
+                                Dict.get label model.labelColors
+
+                            labelPickerKey =
+                                "label-reader:" ++ label
+
+                            labelPickerOpen =
+                                model.colorPickerFor == Just labelPickerKey
+                        in
+                        [ span
+                            [ class "label-chip"
+                            , style "background"
+                                (labelColor
+                                    |> Maybe.map (\c -> c ++ "28")
+                                    |> Maybe.withDefault "color-mix(in srgb, var(--accent) 12%, transparent)"
+                                )
+                            , style "color" (labelColor |> Maybe.withDefault "var(--accent)")
+                            , style "border-color" (labelColor |> Maybe.map (\c -> c ++ "60") |> Maybe.withDefault "transparent")
+                            ]
+                            [ button
+                                [ class "label-color-btn"
+                                , onClick (OpenColorPicker labelPickerKey)
+                                , title "Set label color"
+                                , style "color" (labelColor |> Maybe.withDefault "var(--accent)")
+                                ]
+                                [ text "⬟" ]
+                            , text label
                             , button
                                 [ class "label-remove"
                                 , onClick (RemoveLabel art.link label)
@@ -1311,6 +1584,15 @@ viewArticleReader model art =
                                 ]
                                 [ text "×" ]
                             ]
+                        , if labelPickerOpen then
+                            viewColorPalette labelPickerKey
+                                labelColor
+                                (SetLabelColor label)
+                                (ClearLabelColor label)
+
+                          else
+                            text ""
+                        ]
                     )
                     labels
                     ++ [ div [ class "label-add-row" ]
@@ -1515,9 +1797,22 @@ viewArticle model art =
             , button
                 [ classList [ ( "btn-fav-card", True ), ( "is-fav", isFav ) ]
                 , onClick (ToggleFavourite art.link)
-                , title (if isFav then "Remove star" else "Star article")
+                , title
+                    (if isFav then
+                        "Remove star"
+
+                     else
+                        "Star article"
+                    )
                 ]
-                [ text (if isFav then "★" else "☆") ]
+                [ text
+                    (if isFav then
+                        "★"
+
+                     else
+                        "☆"
+                    )
+                ]
             , a
                 [ href art.link
                 , target "_blank"
@@ -1529,7 +1824,25 @@ viewArticle model art =
             ]
         , if not (List.isEmpty labels) then
             div [ class "article-labels" ]
-                (List.map (\l -> span [ class "label-chip-sm" ] [ text l ]) labels)
+                (List.map
+                    (\l ->
+                        let
+                            labelColor =
+                                Dict.get l model.labelColors
+                        in
+                        span
+                            [ class "label-chip-sm"
+                            , style "background"
+                                (labelColor
+                                    |> Maybe.map (\c -> c ++ "28")
+                                    |> Maybe.withDefault "color-mix(in srgb, var(--accent) 12%, transparent)"
+                                )
+                            , style "color" (labelColor |> Maybe.withDefault "var(--accent)")
+                            ]
+                            [ text l ]
+                    )
+                    labels
+                )
 
           else
             text ""

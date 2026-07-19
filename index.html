@@ -45,6 +45,40 @@
       }
     }
 
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-hover: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #7d8590;
+      --accent: #58a6ff;
+      --accent-text: #0d1117;
+      --badge-bg: #1f6feb;
+      --badge-text: #ffffff;
+      --error: #f85149;
+      --error-bg: #160b0b;
+      --fav: #e3b341;
+      --shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+
+    :root[data-theme="light"] {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface-hover: #f3f4f6;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-muted: #636c76;
+      --accent: #0969da;
+      --accent-text: #ffffff;
+      --badge-bg: #0969da;
+      --badge-text: #ffffff;
+      --error: #cf222e;
+      --error-bg: #fff1f0;
+      --fav: #e3a008;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+
     html, body { height: 100%; overflow: hidden; }
 
     body {
@@ -88,6 +122,11 @@
     .app.sidebar-mini .feed-nav-item {
       justify-content: center;
       padding: 8px 4px;
+    }
+
+    .app.sidebar-mini .btn-color-dot,
+    .app.sidebar-mini .label-nav-wrapper .color-palette {
+      display: none;
     }
 
     /* ── Sidebar ───────────────────────────────────── */
@@ -945,6 +984,138 @@
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+    /* ── Theme toggle ──────────────────────────────── */
+    .theme-toggle-btn {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      z-index: 100;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      height: 30px;
+      width: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+      transition: background .12s, color .12s;
+    }
+    .theme-toggle-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+    /* ── Color palette ─────────────────────────────── */
+    .color-palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .color-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+      padding: 0;
+      transition: transform .1s;
+    }
+    .color-swatch:hover { transform: scale(1.15); }
+
+    .color-swatch-clear {
+      background: var(--surface-hover) !important;
+      border-color: var(--border) !important;
+      color: var(--text-muted);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+    .color-swatch-clear:hover { color: var(--error); }
+
+    /* ── Tab bar color dot ─────────────────────────── */
+    .tab-color-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-block;
+    }
+
+    /* ── Toolbar separator ─────────────────────────── */
+    .toolbar-separator {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    /* ── Tab color button in toolbar ───────────────── */
+    .btn-tab-color {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      flex-shrink: 0;
+      padding: 0;
+      transition: transform .1s, border-color .1s;
+      background: var(--surface-hover);
+    }
+    .btn-tab-color:hover { transform: scale(1.1); border-color: var(--text-muted); }
+
+    /* ── Label color button in label chip ──────────── */
+    .label-chip {
+      position: relative;
+    }
+
+    .label-color-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      opacity: .6;
+      font-size: 12px;
+      padding: 0 2px;
+      line-height: 1;
+      transition: opacity .1s;
+      flex-shrink: 0;
+    }
+    .label-color-btn:hover { opacity: 1; }
+
+    /* ── Label nav wrapper (sidebar) ───────────────── */
+    .label-nav-wrapper {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .btn-color-dot {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: var(--radius);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .15s;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .label-nav-wrapper:hover .btn-color-dot { opacity: 1; }
+    .btn-color-dot:hover { background: var(--surface-hover); color: var(--text); }
+
     /* ── Print / Save as PDF ───────────────────────── */
     @media print {
       .sidebar,
@@ -995,6 +1166,15 @@
     const KEY_FAVOURITES   = 'rss-view-favourites';
     const KEY_LABELS       = 'rss-view-labels';
     const KEY_FEED_NAMES   = 'rss-view-feed-names';
+    const KEY_TAB_COLORS   = 'rss-view-tab-colors';
+    const KEY_LABEL_COLORS = 'rss-view-label-colors';
+    const KEY_THEME        = 'rss-view-theme';
+
+    // Apply stored theme immediately to avoid flash
+    (function() {
+      const t = localStorage.getItem(KEY_THEME);
+      if (t) document.documentElement.dataset.theme = t;
+    })();
 
     function load(key, fallback) {
       try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
@@ -1013,7 +1193,15 @@
           topics:           load(KEY_TOPICS, {}),
           favourites:       load(KEY_FAVOURITES, []),
           articleLabels:    load(KEY_LABELS, {}),
-          customFeedTitles: load(KEY_FEED_NAMES, {})
+          customFeedTitles: load(KEY_FEED_NAMES, {}),
+          darkMode: (function() {
+            const s = localStorage.getItem(KEY_THEME);
+            if (s === 'dark') return true;
+            if (s === 'light') return false;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches;
+          })(),
+          tabColors:   load(KEY_TAB_COLORS, {}),
+          labelColors: load(KEY_LABEL_COLORS, {})
         }
       });
 
@@ -1039,6 +1227,19 @@
 
       app.ports.saveCustomFeedTitles.subscribe(names => {
         localStorage.setItem(KEY_FEED_NAMES, JSON.stringify(names));
+      });
+
+      app.ports.saveTabColors.subscribe(colors => {
+        localStorage.setItem(KEY_TAB_COLORS, JSON.stringify(colors));
+      });
+
+      app.ports.saveLabelColors.subscribe(colors => {
+        localStorage.setItem(KEY_LABEL_COLORS, JSON.stringify(colors));
+      });
+
+      app.ports.setTheme.subscribe(theme => {
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem(KEY_THEME, theme);
       });
 
       app.ports.printArticle.subscribe(() => {
