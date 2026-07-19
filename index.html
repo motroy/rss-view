@@ -354,19 +354,6 @@
       letter-spacing: .4px;
     }
 
-    .article-title {
-      display: block;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-      text-decoration: none;
-      line-height: 1.4;
-      margin-bottom: 8px;
-      transition: color .1s;
-    }
-    .article-title:hover { color: var(--accent); }
-    .article-card.is-read .article-title { color: var(--text-muted); }
-
     .article-description {
       font-size: 13px;
       color: var(--text-muted);
@@ -451,6 +438,124 @@
       word-break: break-all;
     }
 
+    /* ── Article title row ─────────────────────────── */
+    .article-title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .article-title {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      background: none;
+      border: none;
+      padding: 0;
+      text-align: left;
+      cursor: pointer;
+      line-height: 1.4;
+      transition: color .1s;
+    }
+    .article-title:hover { color: var(--accent); }
+    .article-card.is-read .article-title { color: var(--text-muted); }
+
+    .article-external-link {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-decoration: none;
+      opacity: 0;
+      transition: opacity .15s, color .1s;
+    }
+    .article-card:hover .article-external-link { opacity: 1; }
+    .article-external-link:hover { color: var(--accent); }
+
+    /* ── Article reader ─────────────────────────────── */
+    .article-reader {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .reader-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .reader-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 48px;
+      max-width: 780px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .reader-title {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .reader-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .reader-content {
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    .reader-content p { margin-bottom: 1.1em; }
+    .reader-content h1,
+    .reader-content h2,
+    .reader-content h3,
+    .reader-content h4 {
+      font-weight: 600;
+      margin: 1.4em 0 .5em;
+      line-height: 1.3;
+    }
+    .reader-content h1 { font-size: 1.4em; }
+    .reader-content h2 { font-size: 1.2em; }
+    .reader-content h3 { font-size: 1.05em; }
+    .reader-content img { max-width: 100%; height: auto; border-radius: 4px; margin: .5em 0; }
+    .reader-content a { color: var(--accent); }
+    .reader-content pre,
+    .reader-content code {
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: .88em;
+      background: var(--surface-hover);
+      border-radius: 4px;
+    }
+    .reader-content pre { padding: 12px 16px; overflow-x: auto; }
+    .reader-content code { padding: 2px 5px; }
+    .reader-content pre code { padding: 0; background: none; }
+    .reader-content blockquote {
+      border-left: 3px solid var(--border);
+      margin: 1em 0;
+      padding: .5em 1em;
+      color: var(--text-muted);
+    }
+    .reader-content ul,
+    .reader-content ol { padding-left: 1.5em; margin-bottom: 1em; }
+    .reader-content li { margin-bottom: .3em; }
+
     /* ── Scrollbars ────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -488,6 +593,23 @@
 
       app.ports.saveReadArticles.subscribe(articles => {
         localStorage.setItem(KEY_READ, JSON.stringify(articles));
+      });
+
+      app.ports.renderContent.subscribe(({ id, html }) => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.innerHTML = html;
+            el.querySelectorAll('a').forEach(a => {
+              a.setAttribute('target', '_blank');
+              a.setAttribute('rel', 'noopener noreferrer');
+            });
+            el.querySelectorAll('img').forEach(img => {
+              img.style.maxWidth = '100%';
+              img.style.height = 'auto';
+            });
+          }
+        });
       });
     } catch (e) {
       document.getElementById('app').innerHTML =

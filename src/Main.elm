@@ -21,6 +21,9 @@ port saveFeedUrls : E.Value -> Cmd msg
 port saveReadArticles : E.Value -> Cmd msg
 
 
+port renderContent : E.Value -> Cmd msg
+
+
 
 -- MAIN
 
@@ -49,6 +52,7 @@ type alias Model =
     , readArticles : Set String
     , activeFilter : Maybe String
     , sidebarOpen : Bool
+    , selectedArticle : Maybe Article
     }
 
 
@@ -56,6 +60,7 @@ type alias Article =
     { title : String
     , link : String
     , description : String
+    , content : String
     , pubDate : String
     , feedTitle : String
     , author : String
@@ -86,6 +91,7 @@ init flags =
       , readArticles = readArticles
       , activeFilter = Nothing
       , sidebarOpen = True
+      , selectedArticle = Nothing
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -106,6 +112,8 @@ type Msg
     | RefreshAll
     | RefreshFeed String
     | ToggleSidebar
+    | SelectArticle Article
+    | CloseArticle
 
 
 type alias RssFeedResponse =
@@ -119,6 +127,7 @@ type alias RssItem =
     { title : String
     , link : String
     , description : String
+    , content : String
     , pubDate : String
     , author : String
     }
@@ -187,6 +196,7 @@ update msg model =
                                     { title = item.title
                                     , link = item.link
                                     , description = item.description
+                                    , content = item.content
                                     , pubDate = item.pubDate
                                     , feedTitle = response.feedTitle
                                     , author = item.author
@@ -253,6 +263,21 @@ update msg model =
 
         ToggleSidebar ->
             ( { model | sidebarOpen = not model.sidebarOpen }, Cmd.none )
+
+        SelectArticle art ->
+            let
+                newRead =
+                    Set.insert art.link model.readArticles
+            in
+            ( { model | selectedArticle = Just art, readArticles = newRead }
+            , Cmd.batch
+                [ renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string art.content ) ])
+                , saveReadArticles (E.list E.string (Set.toList newRead))
+                ]
+            )
+
+        CloseArticle ->
+            ( { model | selectedArticle = Nothing }, Cmd.none )
 
 
 
@@ -401,10 +426,11 @@ feedDecoder =
 
 itemDecoder : Decoder RssItem
 itemDecoder =
-    D.map5 RssItem
+    D.map6 RssItem
         (D.field "title" D.string)
         (D.field "link" D.string)
         (D.oneOf [ D.field "description" D.string, D.succeed "" ])
+        (D.oneOf [ D.field "content" D.string, D.field "description" D.string, D.succeed "" ])
         (D.oneOf [ D.field "pubDate" D.string, D.succeed "" ])
         (D.oneOf [ D.field "author" D.string, D.succeed "" ])
 
@@ -501,6 +527,43 @@ viewAllFeedsItem model =
         ]
 
 
+viewArticleReader : Article -> Html Msg
+viewArticleReader art =
+    div [ class "article-reader" ]
+        [ div [ class "reader-toolbar" ]
+            [ button
+                [ class "btn-ghost"
+                , onClick CloseArticle
+                ]
+                [ text "← Back" ]
+            , a
+                [ href art.link
+                , target "_blank"
+                , rel "noopener noreferrer"
+                , class "btn-ghost"
+                ]
+                [ text "Open in browser ↗" ]
+            ]
+        , div [ class "reader-body" ]
+            [ h1 [ class "reader-title" ] [ text art.title ]
+            , div [ class "reader-meta" ]
+                [ span [ class "article-feed-name" ] [ text art.feedTitle ]
+                , if art.pubDate /= "" then
+                    span [] [ text (" · " ++ formatDate art.pubDate) ]
+
+                  else
+                    text ""
+                , if art.author /= "" then
+                    span [] [ text (" · " ++ art.author) ]
+
+                  else
+                    text ""
+                ]
+            , div [ id "article-content", class "reader-content" ] []
+            ]
+        ]
+
+
 viewFeedNavItem : Model -> String -> Html Msg
 viewFeedNavItem model url =
     let
@@ -560,10 +623,16 @@ viewMainContent : Model -> Html Msg
 viewMainContent model =
     main_
         [ class "main" ]
-        [ viewMainHeader model
-        , viewErrors model
-        , viewArticleList model
-        ]
+        (case model.selectedArticle of
+            Just art ->
+                [ viewArticleReader art ]
+
+            Nothing ->
+                [ viewMainHeader model
+                , viewErrors model
+                , viewArticleList model
+                ]
+        )
 
 
 viewMainHeader : Model -> Html Msg
@@ -706,14 +775,21 @@ viewArticle model art =
               else
                 text ""
             ]
-        , a
-            [ href art.link
-            , target "_blank"
-            , rel "noopener noreferrer"
-            , class "article-title"
-            , onClick (MarkRead art.link)
+        , div [ class "article-title-row" ]
+            [ button
+                [ class "article-title"
+                , onClick (SelectArticle art)
+                ]
+                [ text art.title ]
+            , a
+                [ href art.link
+                , target "_blank"
+                , rel "noopener noreferrer"
+                , class "article-external-link"
+                , title "Open in browser"
+                ]
+                [ text "↗" ]
             ]
-            [ text art.title ]
         , if description /= "" then
             p [ class "article-description" ] [ text description ]
 
