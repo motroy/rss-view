@@ -24,6 +24,18 @@ port saveReadArticles : E.Value -> Cmd msg
 port renderContent : E.Value -> Cmd msg
 
 
+port printArticle : E.Value -> Cmd msg
+
+
+port saveTopics : E.Value -> Cmd msg
+
+
+port saveFavourites : E.Value -> Cmd msg
+
+
+port saveArticleLabels : E.Value -> Cmd msg
+
+
 
 -- MAIN
 
@@ -42,6 +54,12 @@ main =
 -- MODEL
 
 
+type FeedFilter
+    = AllFeeds
+    | ByFeed String
+    | ByLabel String
+
+
 type alias Model =
     { feedUrls : List String
     , articles : List Article
@@ -50,10 +68,16 @@ type alias Model =
     , loading : Set String
     , errors : Dict String String
     , readArticles : Set String
-    , activeFilter : Maybe String
+    , activeFilter : FeedFilter
     , sidebarMini : Bool
     , openTabs : List Article
     , activeTabLink : Maybe String
+    , topics : Dict String (List String)
+    , collapsedTopics : Set String
+    , favourites : Set String
+    , articleLabels : Dict String (List String)
+    , newTopicInput : String
+    , labelInput : String
     }
 
 
@@ -82,6 +106,22 @@ init flags =
                 |> D.decodeValue (D.field "readArticles" (D.list D.string))
                 |> Result.withDefault []
                 |> Set.fromList
+
+        topics =
+            flags
+                |> D.decodeValue (D.field "topics" (D.dict (D.list D.string)))
+                |> Result.withDefault Dict.empty
+
+        favourites =
+            flags
+                |> D.decodeValue (D.field "favourites" (D.list D.string))
+                |> Result.withDefault []
+                |> Set.fromList
+
+        articleLabels =
+            flags
+                |> D.decodeValue (D.field "articleLabels" (D.dict (D.list D.string)))
+                |> Result.withDefault Dict.empty
     in
     ( { feedUrls = feedUrls
       , articles = []
@@ -90,10 +130,16 @@ init flags =
       , loading = Set.fromList feedUrls
       , errors = Dict.empty
       , readArticles = readArticles
-      , activeFilter = Nothing
+      , activeFilter = AllFeeds
       , sidebarMini = False
       , openTabs = []
       , activeTabLink = Nothing
+      , topics = topics
+      , collapsedTopics = Set.empty
+      , favourites = favourites
+      , articleLabels = articleLabels
+      , newTopicInput = ""
+      , labelInput = ""
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -110,13 +156,23 @@ type Msg
     | GotFeed String (Result Http.Error RssFeedResponse)
     | MarkRead String
     | MarkAllRead
-    | SetFilter (Maybe String)
+    | SetFilter FeedFilter
     | RefreshAll
     | RefreshFeed String
     | ToggleSidebar
     | SelectArticle Article
     | CloseTab String
     | ActivateTab (Maybe String)
+    | PrintArticle
+    | NewTopicInputChanged String
+    | CreateTopic
+    | DeleteTopic String
+    | AssignFeedToTopic String String
+    | ToggleTopic String
+    | ToggleFavourite String
+    | LabelInputChanged String
+    | AddLabel String
+    | RemoveLabel String String
 
 
 type alias RssFeedResponse =
@@ -172,11 +228,15 @@ update msg model =
                     List.filter ((/=) url) model.feedUrls
 
                 newFilter =
-                    if model.activeFilter == Just url then
-                        Nothing
+                    case model.activeFilter of
+                        ByFeed u ->
+                            if u == url then AllFeeds else model.activeFilter
 
-                    else
-                        model.activeFilter
+                        _ ->
+                            model.activeFilter
+
+                newTopics =
+                    Dict.map (\_ urls -> List.filter ((/=) url) urls) model.topics
             in
             ( { model
                 | feedUrls = newUrls
@@ -185,8 +245,12 @@ update msg model =
                 , loading = Set.remove url model.loading
                 , errors = Dict.remove url model.errors
                 , activeFilter = newFilter
+                , topics = newTopics
               }
-            , saveFeedUrls (E.list E.string newUrls)
+            , Cmd.batch
+                [ saveFeedUrls (E.list E.string newUrls)
+                , saveTopics (E.dict identity (E.list E.string) newTopics)
+                ]
             )
 
         GotFeed url result ->
@@ -251,8 +315,8 @@ update msg model =
             , saveReadArticles (E.list E.string (Set.toList newRead))
             )
 
-        SetFilter filter ->
-            ( { model | activeFilter = filter }, Cmd.none )
+        SetFilter f ->
+            ( { model | activeFilter = f }, Cmd.none )
 
         RefreshAll ->
             ( { model | loading = Set.fromList model.feedUrls }
@@ -286,6 +350,7 @@ update msg model =
                 | openTabs = newTabs
                 , activeTabLink = Just art.link
                 , readArticles = newRead
+                , labelInput = ""
               }
             , Cmd.batch
                 [ renderContent (E.object [ ( "id", E.string "article-content" ), ( "html", E.string art.content ) ])
@@ -320,7 +385,7 @@ update msg model =
             )
 
         ActivateTab maybeLink ->
-            ( { model | activeTabLink = maybeLink }
+            ( { model | activeTabLink = maybeLink, labelInput = "" }
             , case maybeLink of
                 Just link ->
                     case List.head (List.filter (\a -> a.link == link) model.openTabs) of
@@ -332,6 +397,135 @@ update msg model =
 
                 Nothing ->
                     Cmd.none
+            )
+
+        PrintArticle ->
+            ( model, printArticle E.null )
+
+        NewTopicInputChanged s ->
+            ( { model | newTopicInput = s }, Cmd.none )
+
+        CreateTopic ->
+            let
+                name =
+                    String.trim model.newTopicInput
+            in
+            if String.isEmpty name || Dict.member name model.topics then
+                ( { model | newTopicInput = "" }, Cmd.none )
+
+            else
+                let
+                    newTopics =
+                        Dict.insert name [] model.topics
+                in
+                ( { model | topics = newTopics, newTopicInput = "" }
+                , saveTopics (E.dict identity (E.list E.string) newTopics)
+                )
+
+        DeleteTopic name ->
+            let
+                newTopics =
+                    Dict.remove name model.topics
+            in
+            ( { model | topics = newTopics }
+            , saveTopics (E.dict identity (E.list E.string) newTopics)
+            )
+
+        AssignFeedToTopic feedUrl topicName ->
+            let
+                cleaned =
+                    Dict.map (\_ urls -> List.filter ((/=) feedUrl) urls) model.topics
+
+                newTopics =
+                    if topicName == "" then
+                        cleaned
+
+                    else
+                        Dict.update topicName
+                            (Maybe.map
+                                (\urls ->
+                                    if List.member feedUrl urls then
+                                        urls
+
+                                    else
+                                        urls ++ [ feedUrl ]
+                                )
+                            )
+                            cleaned
+            in
+            ( { model | topics = newTopics }
+            , saveTopics (E.dict identity (E.list E.string) newTopics)
+            )
+
+        ToggleTopic name ->
+            ( { model
+                | collapsedTopics =
+                    if Set.member name model.collapsedTopics then
+                        Set.remove name model.collapsedTopics
+
+                    else
+                        Set.insert name model.collapsedTopics
+              }
+            , Cmd.none
+            )
+
+        ToggleFavourite link ->
+            let
+                newFavs =
+                    if Set.member link model.favourites then
+                        Set.remove link model.favourites
+
+                    else
+                        Set.insert link model.favourites
+            in
+            ( { model | favourites = newFavs }
+            , saveFavourites (E.list E.string (Set.toList newFavs))
+            )
+
+        LabelInputChanged s ->
+            ( { model | labelInput = s }, Cmd.none )
+
+        AddLabel articleLink ->
+            let
+                label =
+                    String.trim model.labelInput
+            in
+            if String.isEmpty label then
+                ( model, Cmd.none )
+
+            else
+                let
+                    current =
+                        Dict.get articleLink model.articleLabels |> Maybe.withDefault []
+
+                    newLabels =
+                        if List.member label current then
+                            model.articleLabels
+
+                        else
+                            Dict.insert articleLink (current ++ [ label ]) model.articleLabels
+                in
+                ( { model | articleLabels = newLabels, labelInput = "" }
+                , saveArticleLabels (E.dict identity (E.list E.string) newLabels)
+                )
+
+        RemoveLabel articleLink label ->
+            let
+                current =
+                    Dict.get articleLink model.articleLabels |> Maybe.withDefault []
+
+                updated =
+                    List.filter ((/=) label) current
+
+                newLabels =
+                    if List.isEmpty updated then
+                        Dict.remove articleLink model.articleLabels
+
+                    else
+                        Dict.insert articleLink updated model.articleLabels
+            in
+            ( { model | articleLabels = newLabels }
+            , saveArticleLabels (E.dict identity (E.list E.string) newLabels)
             )
 
 
@@ -347,11 +541,48 @@ sortArticles =
 filteredArticles : Model -> List Article
 filteredArticles model =
     case model.activeFilter of
-        Nothing ->
+        AllFeeds ->
             model.articles
 
-        Just url ->
+        ByFeed url ->
             List.filter (\a -> a.feedUrl == url) model.articles
+
+        ByLabel label ->
+            if label == "★ Starred" then
+                List.filter (\a -> Set.member a.link model.favourites) model.articles
+
+            else
+                List.filter
+                    (\a ->
+                        Dict.get a.link model.articleLabels
+                            |> Maybe.withDefault []
+                            |> List.member label
+                    )
+                    model.articles
+
+
+allLabels : Model -> List String
+allLabels model =
+    Dict.values model.articleLabels
+        |> List.concat
+        |> Set.fromList
+        |> Set.toList
+        |> List.sort
+
+
+feedTopic : Dict String (List String) -> String -> String
+feedTopic topics feedUrl =
+    Dict.toList topics
+        |> List.filterMap
+            (\( topicName, urls ) ->
+                if List.member feedUrl urls then
+                    Just topicName
+
+                else
+                    Nothing
+            )
+        |> List.head
+        |> Maybe.withDefault ""
 
 
 httpErrorToString : Http.Error -> String
@@ -424,7 +655,6 @@ shortenUrl url =
 
 formatDate : String -> String
 formatDate date =
-    -- rss2json returns "YYYY-MM-DD HH:MM:SS"
     let
         parts =
             String.split "-" (String.left 10 date)
@@ -444,19 +674,44 @@ formatDate date =
 monthName : String -> String
 monthName m =
     case m of
-        "01" -> "Jan"
-        "02" -> "Feb"
-        "03" -> "Mar"
-        "04" -> "Apr"
-        "05" -> "May"
-        "06" -> "Jun"
-        "07" -> "Jul"
-        "08" -> "Aug"
-        "09" -> "Sep"
-        "10" -> "Oct"
-        "11" -> "Nov"
-        "12" -> "Dec"
-        _ -> m
+        "01" ->
+            "Jan"
+
+        "02" ->
+            "Feb"
+
+        "03" ->
+            "Mar"
+
+        "04" ->
+            "Apr"
+
+        "05" ->
+            "May"
+
+        "06" ->
+            "Jun"
+
+        "07" ->
+            "Jul"
+
+        "08" ->
+            "Aug"
+
+        "09" ->
+            "Sep"
+
+        "10" ->
+            "Oct"
+
+        "11" ->
+            "Nov"
+
+        "12" ->
+            "Dec"
+
+        _ ->
+            m
 
 
 
@@ -519,6 +774,40 @@ view model =
 
 viewSidebar : Model -> Html Msg
 viewSidebar model =
+    let
+        starCount =
+            Set.size model.favourites
+
+        labels =
+            allLabels model
+
+        assignedFeeds =
+            Dict.values model.topics |> List.concat
+
+        ungroupedFeeds =
+            List.filter (\url -> not (List.member url assignedFeeds)) model.feedUrls
+
+        topicSections =
+            Dict.toList model.topics
+                |> List.sortBy Tuple.first
+                |> List.concatMap
+                    (\( topicName, topicUrls ) ->
+                        let
+                            collapsed =
+                                Set.member topicName model.collapsedTopics
+
+                            feedsInTopic =
+                                List.filter (\url -> List.member url model.feedUrls) topicUrls
+                        in
+                        [ viewTopicHeader model topicName (List.length feedsInTopic) collapsed ]
+                            ++ (if collapsed then
+                                    []
+
+                                else
+                                    List.map (viewFeedNavItem model) feedsInTopic
+                               )
+                    )
+    in
     aside [ class "sidebar" ]
         [ div [ class "sidebar-header" ]
             [ h1 [ class "logo" ] [ text "RSS View" ]
@@ -567,7 +856,63 @@ viewSidebar model =
                 [ text "Add" ]
             ]
         , nav [ class "feed-nav" ]
-            (viewAllFeedsItem model :: List.map (viewFeedNavItem model) model.feedUrls)
+            ([ viewAllFeedsItem model
+             , viewStarredItem model starCount
+             ]
+                ++ topicSections
+                ++ List.map (viewFeedNavItem model) ungroupedFeeds
+                ++ (if not (List.isEmpty labels) then
+                        [ div [ class "nav-section-label" ] [ text "Labels" ] ]
+                            ++ List.map (viewLabelNavItem model) labels
+
+                    else
+                        []
+                   )
+                ++ [ viewNewTopicInput model ]
+            )
+        ]
+
+
+viewTopicHeader : Model -> String -> Int -> Bool -> Html Msg
+viewTopicHeader model topicName feedCount collapsed =
+    div [ class "topic-header" ]
+        [ button
+            [ class "topic-toggle"
+            , onClick (ToggleTopic topicName)
+            , title (if collapsed then "Expand" else "Collapse")
+            ]
+            [ text (if collapsed then "▶" else "▼")
+            , span [ class "topic-name" ] [ text topicName ]
+            , span [ class "topic-count" ] [ text (String.fromInt feedCount) ]
+            ]
+        , button
+            [ class "btn-topic-delete"
+            , onClick (DeleteTopic topicName)
+            , title ("Delete topic \"" ++ topicName ++ "\"")
+            ]
+            [ text "×" ]
+        ]
+
+
+viewNewTopicInput : Model -> Html Msg
+viewNewTopicInput model =
+    div [ class "new-topic-row" ]
+        [ input
+            [ type_ "text"
+            , placeholder "New topic…"
+            , value model.newTopicInput
+            , onInput NewTopicInputChanged
+            , onEnter CreateTopic
+            , class "new-topic-input"
+            ]
+            []
+        , button
+            [ class "btn-topic-add"
+            , onClick CreateTopic
+            , disabled (String.isEmpty (String.trim model.newTopicInput))
+            , title "Create topic"
+            ]
+            [ text "+" ]
         ]
 
 
@@ -579,11 +924,11 @@ viewAllFeedsItem model =
                 |> List.length
 
         isActive =
-            model.activeFilter == Nothing
+            model.activeFilter == AllFeeds
     in
     button
         [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
-        , onClick (SetFilter Nothing)
+        , onClick (SetFilter AllFeeds)
         , title "All Feeds"
         ]
         [ span [ class "feed-nav-icon" ] [ text "●" ]
@@ -593,6 +938,133 @@ viewAllFeedsItem model =
 
           else
             text ""
+        ]
+
+
+viewStarredItem : Model -> Int -> Html Msg
+viewStarredItem model starCount =
+    let
+        isActive =
+            model.activeFilter == ByLabel "★ Starred"
+    in
+    button
+        [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
+        , onClick (SetFilter (ByLabel "★ Starred"))
+        , title "Starred articles"
+        ]
+        [ span [ class "feed-nav-icon" ] [ text "★" ]
+        , span [ class "feed-nav-title" ] [ text "Starred" ]
+        , if starCount > 0 then
+            span [ class "badge" ] [ text (String.fromInt starCount) ]
+
+          else
+            text ""
+        ]
+
+
+viewLabelNavItem : Model -> String -> Html Msg
+viewLabelNavItem model label =
+    let
+        isActive =
+            model.activeFilter == ByLabel label
+
+        count =
+            Dict.values model.articleLabels
+                |> List.concat
+                |> List.filter ((==) label)
+                |> List.length
+    in
+    button
+        [ classList [ ( "feed-nav-item", True ), ( "active", isActive ) ]
+        , onClick (SetFilter (ByLabel label))
+        , title label
+        ]
+        [ span [ class "feed-nav-icon" ] [ text "⬡" ]
+        , span [ class "feed-nav-title" ] [ text label ]
+        , if count > 0 then
+            span [ class "badge" ] [ text (String.fromInt count) ]
+
+          else
+            text ""
+        ]
+
+
+viewFeedNavItem : Model -> String -> Html Msg
+viewFeedNavItem model url =
+    let
+        feedTitle =
+            Dict.get url model.feedTitles
+                |> Maybe.withDefault (shortenUrl url)
+
+        unreadCount =
+            List.filter (\a -> a.feedUrl == url && not (Set.member a.link model.readArticles)) model.articles
+                |> List.length
+
+        isLoading =
+            Set.member url model.loading
+
+        hasError =
+            Dict.member url model.errors
+
+        isActive =
+            model.activeFilter == ByFeed url
+
+        currentTopic =
+            feedTopic model.topics url
+    in
+    div [ classList [ ( "feed-nav-item-wrapper", True ), ( "is-active", isActive ) ] ]
+        [ button
+            [ classList
+                [ ( "feed-nav-item", True )
+                , ( "active", isActive )
+                , ( "has-error", hasError )
+                ]
+            , onClick (SetFilter (ByFeed url))
+            , title feedTitle
+            ]
+            [ span [ class "feed-nav-icon" ]
+                [ if isLoading then
+                    span [ class "spinner" ] [ text "⟳" ]
+
+                  else if hasError then
+                    span [ class "error-icon" ] [ text "!" ]
+
+                  else
+                    text "○"
+                ]
+            , span [ class "feed-nav-title", title url ] [ text feedTitle ]
+            , if unreadCount > 0 then
+                span [ class "badge" ] [ text (String.fromInt unreadCount) ]
+
+              else
+                text ""
+            ]
+        , if not (Dict.isEmpty model.topics) then
+            select
+                [ class "topic-select"
+                , onInput (AssignFeedToTopic url)
+                , title "Assign to topic"
+                ]
+                (option [ value "", selected (currentTopic == "") ] [ text "—" ]
+                    :: List.map
+                        (\topicName ->
+                            option
+                                [ value topicName
+                                , selected (currentTopic == topicName)
+                                ]
+                                [ text topicName ]
+                        )
+                        (Dict.keys model.topics |> List.sort)
+                )
+
+          else
+            text ""
+        , button
+            [ class "btn-remove"
+            , onClick (RemoveFeed url)
+            , title ("Remove \"" ++ feedTitle ++ "\"")
+            ]
+            [ text "×" ]
         ]
 
 
@@ -636,8 +1108,15 @@ viewTabBar model =
         )
 
 
-viewArticleReader : Article -> Html Msg
-viewArticleReader art =
+viewArticleReader : Model -> Article -> Html Msg
+viewArticleReader model art =
+    let
+        isFav =
+            Set.member art.link model.favourites
+
+        labels =
+            Dict.get art.link model.articleLabels |> Maybe.withDefault []
+    in
     div [ class "article-reader" ]
         [ div [ class "reader-toolbar" ]
             [ button
@@ -645,6 +1124,12 @@ viewArticleReader art =
                 , onClick (CloseTab art.link)
                 ]
                 [ text "× Close" ]
+            , button
+                [ classList [ ( "btn-ghost", True ), ( "btn-fav", True ), ( "is-fav", isFav ) ]
+                , onClick (ToggleFavourite art.link)
+                , title (if isFav then "Remove from starred" else "Add to starred")
+                ]
+                [ text (if isFav then "★ Starred" else "☆ Star") ]
             , a
                 [ href art.link
                 , target "_blank"
@@ -652,6 +1137,12 @@ viewArticleReader art =
                 , class "btn-ghost"
                 ]
                 [ text "Open in browser ↗" ]
+            , button
+                [ class "btn-ghost"
+                , onClick PrintArticle
+                , title "Save as PDF / Print"
+                ]
+                [ text "⎙ Save as PDF" ]
             ]
         , div [ class "reader-body" ]
             [ h1 [ class "reader-title" ] [ text art.title ]
@@ -668,64 +1159,41 @@ viewArticleReader art =
                   else
                     text ""
                 ]
+            , div [ class "reader-labels" ]
+                (List.map
+                    (\label ->
+                        span [ class "label-chip" ]
+                            [ text label
+                            , button
+                                [ class "label-remove"
+                                , onClick (RemoveLabel art.link label)
+                                , title ("Remove label \"" ++ label ++ "\"")
+                                ]
+                                [ text "×" ]
+                            ]
+                    )
+                    labels
+                    ++ [ div [ class "label-add-row" ]
+                            [ input
+                                [ type_ "text"
+                                , placeholder "Add label…"
+                                , value model.labelInput
+                                , onInput LabelInputChanged
+                                , onEnter (AddLabel art.link)
+                                , class "label-input"
+                                ]
+                                []
+                            , button
+                                [ class "btn-label-add"
+                                , onClick (AddLabel art.link)
+                                , disabled (String.isEmpty (String.trim model.labelInput))
+                                ]
+                                [ text "+" ]
+                            ]
+                       ]
+                )
             , div [ id "article-content", class "reader-content" ] []
             ]
-        ]
-
-
-viewFeedNavItem : Model -> String -> Html Msg
-viewFeedNavItem model url =
-    let
-        feedTitle =
-            Dict.get url model.feedTitles
-                |> Maybe.withDefault (shortenUrl url)
-
-        unreadCount =
-            List.filter (\a -> a.feedUrl == url && not (Set.member a.link model.readArticles)) model.articles
-                |> List.length
-
-        isLoading =
-            Set.member url model.loading
-
-        hasError =
-            Dict.member url model.errors
-
-        isActive =
-            model.activeFilter == Just url
-    in
-    div [ classList [ ( "feed-nav-item-wrapper", True ), ( "is-active", isActive ) ] ]
-        [ button
-            [ classList
-                [ ( "feed-nav-item", True )
-                , ( "active", isActive )
-                , ( "has-error", hasError )
-                ]
-            , onClick (SetFilter (Just url))
-            , title feedTitle
-            ]
-            [ span [ class "feed-nav-icon" ]
-                [ if isLoading then
-                    span [ class "spinner" ] [ text "⟳" ]
-
-                  else if hasError then
-                    span [ class "error-icon" ] [ text "!" ]
-
-                  else
-                    text "○"
-                ]
-            , span [ class "feed-nav-title", title url ] [ text feedTitle ]
-            , if unreadCount > 0 then
-                span [ class "badge" ] [ text (String.fromInt unreadCount) ]
-
-              else
-                text ""
-            ]
-        , button
-            [ class "btn-remove"
-            , onClick (RemoveFeed url)
-            , title ("Remove \"" ++ feedTitle ++ "\"")
-            ]
-            [ text "×" ]
         ]
 
 
@@ -747,7 +1215,7 @@ viewMainContent model =
                 Just link ->
                     case List.head (List.filter (\a -> a.link == link) model.openTabs) of
                         Just art ->
-                            viewArticleReader art
+                            viewArticleReader model art
 
                         Nothing ->
                             viewArticleList model
@@ -772,12 +1240,15 @@ viewMainHeader model =
 
         pageTitle =
             case model.activeFilter of
-                Nothing ->
+                AllFeeds ->
                     "All Articles"
 
-                Just url ->
+                ByFeed url ->
                     Dict.get url model.feedTitles
                         |> Maybe.withDefault (shortenUrl url)
+
+                ByLabel label ->
+                    label
     in
     div [ class "main-header" ]
         [ h2 [ class "main-title" ] [ text pageTitle ]
@@ -870,10 +1341,16 @@ viewArticle model art =
         isRead =
             Set.member art.link model.readArticles
 
+        isFav =
+            Set.member art.link model.favourites
+
         description =
             art.description
                 |> stripHtml
                 |> truncateText 280
+
+        labels =
+            Dict.get art.link model.articleLabels |> Maybe.withDefault []
     in
     article
         [ classList [ ( "article-card", True ), ( "is-read", isRead ) ] ]
@@ -896,6 +1373,12 @@ viewArticle model art =
                 , onClick (SelectArticle art)
                 ]
                 [ text art.title ]
+            , button
+                [ classList [ ( "btn-fav-card", True ), ( "is-fav", isFav ) ]
+                , onClick (ToggleFavourite art.link)
+                , title (if isFav then "Remove star" else "Star article")
+                ]
+                [ text (if isFav then "★" else "☆") ]
             , a
                 [ href art.link
                 , target "_blank"
@@ -905,6 +1388,12 @@ viewArticle model art =
                 ]
                 [ text "↗" ]
             ]
+        , if not (List.isEmpty labels) then
+            div [ class "article-labels" ]
+                (List.map (\l -> span [ class "label-chip-sm" ] [ text l ]) labels)
+
+          else
+            text ""
         , if description /= "" then
             p [ class "article-description" ] [ text description ]
 

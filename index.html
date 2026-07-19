@@ -21,6 +21,7 @@
       --badge-text: #ffffff;
       --error: #cf222e;
       --error-bg: #fff1f0;
+      --fav: #e3a008;
       --radius: 6px;
       --shadow: 0 1px 3px rgba(0,0,0,.08);
     }
@@ -39,6 +40,7 @@
         --badge-text: #ffffff;
         --error: #f85149;
         --error-bg: #160b0b;
+        --fav: #e3b341;
         --shadow: 0 1px 3px rgba(0,0,0,.4);
       }
     }
@@ -68,7 +70,11 @@
     .app.sidebar-mini .add-feed,
     .app.sidebar-mini .feed-nav-title,
     .app.sidebar-mini .badge,
-    .app.sidebar-mini .btn-remove {
+    .app.sidebar-mini .btn-remove,
+    .app.sidebar-mini .topic-select,
+    .app.sidebar-mini .topic-header,
+    .app.sidebar-mini .nav-section-label,
+    .app.sidebar-mini .new-topic-row {
       display: none;
     }
 
@@ -169,6 +175,7 @@
       display: flex;
       align-items: center;
       border-radius: var(--radius);
+      gap: 2px;
     }
     .feed-nav-item-wrapper .feed-nav-item { flex: 1; min-width: 0; }
 
@@ -212,7 +219,6 @@
       width: 26px;
       border-radius: var(--radius);
       flex-shrink: 0;
-      margin-right: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -220,6 +226,127 @@
     }
     .feed-nav-item-wrapper:hover .btn-remove { color: var(--text-muted); }
     .btn-remove:hover { background: var(--error-bg); color: var(--error) !important; }
+
+    /* ── Topics ────────────────────────────────────── */
+    .topic-header {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 2px 2px;
+      margin-top: 6px;
+    }
+
+    .topic-toggle {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 3px 6px;
+      border-radius: var(--radius);
+      text-align: left;
+      transition: background .1s, color .1s;
+    }
+    .topic-toggle:hover { background: var(--surface-hover); color: var(--text); }
+
+    .topic-name { flex: 1; }
+
+    .topic-count {
+      background: var(--surface-hover);
+      border-radius: 8px;
+      padding: 0 5px;
+      font-size: 10px;
+    }
+
+    .btn-topic-delete {
+      background: none;
+      border: none;
+      color: transparent;
+      cursor: pointer;
+      font-size: 15px;
+      height: 22px;
+      width: 22px;
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .1s, color .1s;
+      flex-shrink: 0;
+    }
+    .topic-header:hover .btn-topic-delete { color: var(--text-muted); }
+    .btn-topic-delete:hover { background: var(--error-bg); color: var(--error) !important; }
+
+    .topic-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 2px 2px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s;
+      max-width: 80px;
+      flex-shrink: 0;
+    }
+    .feed-nav-item-wrapper:hover .topic-select { opacity: 1; }
+
+    .nav-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--text-muted);
+      padding: 8px 10px 4px;
+      margin-top: 4px;
+    }
+
+    .new-topic-row {
+      display: flex;
+      gap: 4px;
+      padding: 8px 4px 4px;
+      margin-top: 4px;
+      border-top: 1px solid var(--border);
+    }
+
+    .new-topic-input {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      min-width: 0;
+    }
+    .new-topic-input:focus { border-color: var(--accent); }
+    .new-topic-input::placeholder { color: var(--text-muted); }
+
+    .btn-topic-add {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      height: 26px;
+      width: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background .1s, color .1s;
+    }
+    .btn-topic-add:hover:not(:disabled) { background: var(--surface-hover); color: var(--accent); }
+    .btn-topic-add:disabled { opacity: .35; cursor: default; }
 
     /* ── Add feed ──────────────────────────────────── */
     .add-feed {
@@ -290,9 +417,15 @@
       cursor: pointer;
       font-size: 12px;
       padding: 4px 12px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
       transition: background .12s, color .12s;
     }
     .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+
+    .btn-fav.is-fav { color: var(--fav); border-color: var(--fav); }
+    .btn-fav.is-fav:hover { background: color-mix(in srgb, var(--fav) 10%, transparent); }
 
     /* ── Errors ────────────────────────────────────── */
     .error-banner {
@@ -519,7 +652,7 @@
       display: flex;
       align-items: baseline;
       gap: 6px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .article-title {
@@ -538,6 +671,21 @@
     .article-title:hover { color: var(--accent); }
     .article-card.is-read .article-title { color: var(--text-muted); }
 
+    .btn-fav-card {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-muted);
+      padding: 0 2px;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity .15s, color .15s;
+    }
+    .article-card:hover .btn-fav-card { opacity: 1; }
+    .btn-fav-card.is-fav { opacity: 1; color: var(--fav); }
+    .btn-fav-card:hover { color: var(--fav); }
+
     .article-external-link {
       flex-shrink: 0;
       font-size: 12px;
@@ -548,6 +696,92 @@
     }
     .article-card:hover .article-external-link { opacity: 1; }
     .article-external-link:hover { color: var(--accent); }
+
+    /* ── Labels ────────────────────────────────────── */
+    .article-labels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .label-chip-sm {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      color: var(--accent);
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .reader-labels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .label-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      color: var(--accent);
+      border-radius: 12px;
+      padding: 2px 8px 2px 10px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .label-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
+      opacity: .6;
+      transition: opacity .1s;
+    }
+    .label-remove:hover { opacity: 1; }
+
+    .label-add-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .label-input {
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      width: 120px;
+      transition: border-color .15s;
+    }
+    .label-input:focus { border-color: var(--accent); }
+    .label-input::placeholder { color: var(--text-muted); }
+
+    .btn-label-add {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      height: 26px;
+      width: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .1s, color .1s;
+    }
+    .btn-label-add:hover:not(:disabled) { background: var(--surface-hover); color: var(--accent); }
+    .btn-label-add:disabled { opacity: .35; cursor: default; }
 
     /* ── Article reader ─────────────────────────────── */
     .article-reader {
@@ -565,6 +799,7 @@
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
+      flex-wrap: wrap;
     }
 
     .reader-body {
@@ -587,8 +822,8 @@
     .reader-meta {
       font-size: 13px;
       color: var(--text-muted);
-      margin-bottom: 24px;
-      padding-bottom: 20px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
     }
 
@@ -637,18 +872,60 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ── Print / Save as PDF ───────────────────────── */
+    @media print {
+      .sidebar,
+      .tab-bar,
+      .reader-toolbar,
+      .reader-labels { display: none !important; }
+
+      html, body { height: auto; overflow: visible; }
+
+      .app {
+        display: block;
+        height: auto;
+      }
+
+      .main {
+        display: block;
+        overflow: visible;
+      }
+
+      .article-reader {
+        display: block;
+        overflow: visible;
+      }
+
+      .reader-body {
+        max-width: 100%;
+        padding: 24px;
+        overflow: visible;
+      }
+
+      .reader-title { font-size: 20pt; }
+      .reader-meta { font-size: 10pt; }
+      .reader-content { font-size: 11pt; line-height: 1.6; }
+
+      .reader-content a { color: #000; text-decoration: underline; }
+      .reader-content pre,
+      .reader-content code { background: #f5f5f5; }
+    }
   </style>
 </head>
 <body>
   <div id="app"></div>
   <script src="./elm.js" onerror="document.getElementById('app').innerHTML='<p style=\'padding:24px;font-family:monospace;color:#cf222e\'>Failed to load elm.js — check GitHub Pages deployment.</p>'"></script>
   <script>
-    const KEY_FEEDS = 'rss-view-feeds';
-    const KEY_READ  = 'rss-view-read';
+    const KEY_FEEDS      = 'rss-view-feeds';
+    const KEY_READ       = 'rss-view-read';
+    const KEY_TOPICS     = 'rss-view-topics';
+    const KEY_FAVOURITES = 'rss-view-favourites';
+    const KEY_LABELS     = 'rss-view-labels';
 
-    function load(key) {
-      try { return JSON.parse(localStorage.getItem(key) || '[]'); }
-      catch { return []; }
+    function load(key, fallback) {
+      try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+      catch { return fallback; }
     }
 
     try {
@@ -658,8 +935,11 @@
       const app = Elm.Main.init({
         node: document.getElementById('app'),
         flags: {
-          feedUrls:     load(KEY_FEEDS),
-          readArticles: load(KEY_READ)
+          feedUrls:     load(KEY_FEEDS, []),
+          readArticles: load(KEY_READ, []),
+          topics:       load(KEY_TOPICS, {}),
+          favourites:   load(KEY_FAVOURITES, []),
+          articleLabels: load(KEY_LABELS, {})
         }
       });
 
@@ -669,6 +949,22 @@
 
       app.ports.saveReadArticles.subscribe(articles => {
         localStorage.setItem(KEY_READ, JSON.stringify(articles));
+      });
+
+      app.ports.saveTopics.subscribe(topics => {
+        localStorage.setItem(KEY_TOPICS, JSON.stringify(topics));
+      });
+
+      app.ports.saveFavourites.subscribe(favs => {
+        localStorage.setItem(KEY_FAVOURITES, JSON.stringify(favs));
+      });
+
+      app.ports.saveArticleLabels.subscribe(labels => {
+        localStorage.setItem(KEY_LABELS, JSON.stringify(labels));
+      });
+
+      app.ports.printArticle.subscribe(() => {
+        window.print();
       });
 
       app.ports.renderContent.subscribe(({ id, html }) => {
