@@ -16,8 +16,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  cancel-competing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Pages source to GitHub Actions and cancel auto-deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+
+          # Switch Pages source to GitHub Actions so the auto-workflow stops triggering
+          curl -sf -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/pages" \
+            -d '{"build_type":"workflow"}' || true
+
+          # Cancel any 'pages build and deployment' runs for this SHA
+          echo "Checking for 'pages build and deployment' runs on SHA: $SHA"
+          for i in 1 2 3; do
+            RUNS=$(curl -sf \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/actions/runs?head_sha=$SHA&per_page=20" \
+              | jq -r '.workflow_runs[] | select(.name | ascii_downcase | contains("pages build")) | select(.status == "queued" or .status == "in_progress") | .id' \
+              || true)
+            for RUN_ID in $RUNS; do
+              echo "Cancelling run $RUN_ID"
+              curl -sf -X POST \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/cancel" \
+                && echo "Cancelled" || echo "Cancel failed (may already be done)"
+            done
+            if [ -z "$RUNS" ]; then
+              echo "No competing runs found (attempt $i)"
+              break
+            fi
+            sleep 5
+          done
+
   build:
     runs-on: ubuntu-latest
+    needs: cancel-competing
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,34 +96,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Cancel competing pages build and deployment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          SHA="${{ github.sha }}"
-          REPO="${{ github.repository }}"
-          echo "Checking for 'pages build and deployment' runs on SHA: $SHA"
-          RUNS=$(curl -sf \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/actions/runs?head_sha=$SHA&per_page=20" \
-            | jq -r '.workflow_runs[] | select(.name | ascii_downcase | contains("pages build")) | select(.status == "queued" or .status == "in_progress") | .id' \
-            || true)
-          for RUN_ID in $RUNS; do
-            echo "Cancelling run $RUN_ID"
-            curl -sf -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/cancel" \
-              && echo "Cancelled" || echo "Cancel failed (may already be done)"
-          done
-          if [ -n "$RUNS" ]; then
-            echo "Waiting 15s for cancellation to propagate..."
-            sleep 15
-          else
-            echo "No competing runs found"
-          fi
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
