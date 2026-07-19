@@ -60,14 +60,27 @@
       height: 100vh;
     }
 
-    .app.sidebar-collapsed {
-      grid-template-columns: 0 1fr;
+    .app.sidebar-mini {
+      grid-template-columns: 48px 1fr;
     }
 
-    .app.sidebar-collapsed .sidebar {
-      min-width: 0;
-      overflow: hidden;
-      border-right: none;
+    .app.sidebar-mini .logo,
+    .app.sidebar-mini .add-feed,
+    .app.sidebar-mini .feed-nav-title,
+    .app.sidebar-mini .badge,
+    .app.sidebar-mini .btn-remove {
+      display: none;
+    }
+
+    .app.sidebar-mini .sidebar-header {
+      flex-direction: column;
+      padding: 8px 10px;
+      gap: 6px;
+    }
+
+    .app.sidebar-mini .feed-nav-item {
+      justify-content: center;
+      padding: 8px 4px;
     }
 
     /* ── Sidebar ───────────────────────────────────── */
@@ -437,6 +450,69 @@
       color: var(--accent);
       word-break: break-all;
     }
+
+    /* ── Tab bar ────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      align-items: stretch;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tab-bar::-webkit-scrollbar { display: none; }
+
+    .tab-item {
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      height: 38px;
+      border: none;
+      border-right: 1px solid var(--border);
+      background: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background .1s, color .1s;
+      gap: 4px;
+    }
+    .tab-item:hover { background: var(--surface-hover); color: var(--text); }
+    .tab-item.tab-active {
+      background: var(--bg);
+      color: var(--text);
+      border-bottom: 2px solid var(--accent);
+      margin-bottom: -1px;
+    }
+
+    .tab-label {
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: inherit;
+      cursor: pointer;
+      padding: 0;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tab-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      padding: 0 2px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      transition: background .1s, color .1s;
+    }
+    .tab-close:hover { background: var(--surface-hover); color: var(--error); }
 
     /* ── Article title row ─────────────────────────── */
     .article-title-row {
