@@ -36,6 +36,9 @@ port saveFavourites : E.Value -> Cmd msg
 port saveArticleLabels : E.Value -> Cmd msg
 
 
+port saveCustomFeedTitles : E.Value -> Cmd msg
+
+
 
 -- MAIN
 
@@ -78,6 +81,9 @@ type alias Model =
     , articleLabels : Dict String (List String)
     , newTopicInput : String
     , labelInput : String
+    , customFeedTitles : Dict String String
+    , editingFeedName : Maybe String
+    , feedNameInput : String
     }
 
 
@@ -122,6 +128,11 @@ init flags =
             flags
                 |> D.decodeValue (D.field "articleLabels" (D.dict (D.list D.string)))
                 |> Result.withDefault Dict.empty
+
+        customFeedTitles =
+            flags
+                |> D.decodeValue (D.field "customFeedTitles" (D.dict D.string))
+                |> Result.withDefault Dict.empty
     in
     ( { feedUrls = feedUrls
       , articles = []
@@ -140,6 +151,9 @@ init flags =
       , articleLabels = articleLabels
       , newTopicInput = ""
       , labelInput = ""
+      , customFeedTitles = customFeedTitles
+      , editingFeedName = Nothing
+      , feedNameInput = ""
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -173,6 +187,11 @@ type Msg
     | LabelInputChanged String
     | AddLabel String
     | RemoveLabel String String
+    | StartEditFeedName String
+    | FeedNameInputChanged String
+    | SaveFeedName String
+    | CancelFeedNameEdit
+    | ResetFeedName String
 
 
 type alias RssFeedResponse =
@@ -528,6 +547,54 @@ update msg model =
             , saveArticleLabels (E.dict identity (E.list E.string) newLabels)
             )
 
+        StartEditFeedName url ->
+            let
+                current =
+                    Dict.get url model.customFeedTitles
+                        |> Maybe.withDefault
+                            (Dict.get url model.feedTitles
+                                |> Maybe.withDefault (shortenUrl url)
+                            )
+            in
+            ( { model | editingFeedName = Just url, feedNameInput = current }
+            , Cmd.none
+            )
+
+        FeedNameInputChanged s ->
+            ( { model | feedNameInput = s }, Cmd.none )
+
+        SaveFeedName url ->
+            let
+                name =
+                    String.trim model.feedNameInput
+
+                newCustom =
+                    if String.isEmpty name then
+                        Dict.remove url model.customFeedTitles
+
+                    else
+                        Dict.insert url name model.customFeedTitles
+            in
+            ( { model
+                | customFeedTitles = newCustom
+                , editingFeedName = Nothing
+                , feedNameInput = ""
+              }
+            , saveCustomFeedTitles (E.dict identity E.string newCustom)
+            )
+
+        CancelFeedNameEdit ->
+            ( { model | editingFeedName = Nothing, feedNameInput = "" }, Cmd.none )
+
+        ResetFeedName url ->
+            let
+                newCustom =
+                    Dict.remove url model.customFeedTitles
+            in
+            ( { model | customFeedTitles = newCustom }
+            , saveCustomFeedTitles (E.dict identity E.string newCustom)
+            )
+
 
 
 -- HELPERS
@@ -568,6 +635,15 @@ allLabels model =
         |> Set.fromList
         |> Set.toList
         |> List.sort
+
+
+displayFeedTitle : Model -> String -> String
+displayFeedTitle model url =
+    Dict.get url model.customFeedTitles
+        |> Maybe.withDefault
+            (Dict.get url model.feedTitles
+                |> Maybe.withDefault (shortenUrl url)
+            )
 
 
 feedTopic : Dict String (List String) -> String -> String
@@ -993,8 +1069,7 @@ viewFeedNavItem : Model -> String -> Html Msg
 viewFeedNavItem model url =
     let
         feedTitle =
-            Dict.get url model.feedTitles
-                |> Maybe.withDefault (shortenUrl url)
+            displayFeedTitle model url
 
         unreadCount =
             List.filter (\a -> a.feedUrl == url && not (Set.member a.link model.readArticles)) model.articles
@@ -1011,60 +1086,125 @@ viewFeedNavItem model url =
 
         currentTopic =
             feedTopic model.topics url
+
+        isEditing =
+            model.editingFeedName == Just url
+
+        hasCustomName =
+            Dict.member url model.customFeedTitles
     in
     div [ classList [ ( "feed-nav-item-wrapper", True ), ( "is-active", isActive ) ] ]
-        [ button
-            [ classList
-                [ ( "feed-nav-item", True )
-                , ( "active", isActive )
-                , ( "has-error", hasError )
-                ]
-            , onClick (SetFilter (ByFeed url))
-            , title feedTitle
-            ]
-            [ span [ class "feed-nav-icon" ]
-                [ if isLoading then
-                    span [ class "spinner" ] [ text "⟳" ]
+        [ if isEditing then
+            div [ class "feed-name-edit-row" ]
+                [ input
+                    [ type_ "text"
+                    , value model.feedNameInput
+                    , onInput FeedNameInputChanged
+                    , onEnter (SaveFeedName url)
+                    , on "keydown"
+                        (D.field "key" D.string
+                            |> D.andThen
+                                (\k ->
+                                    if k == "Escape" then
+                                        D.succeed CancelFeedNameEdit
 
-                  else if hasError then
-                    span [ class "error-icon" ] [ text "!" ]
+                                    else
+                                        D.fail ""
+                                )
+                        )
+                    , class "feed-name-input"
+                    , autofocus True
+                    ]
+                    []
+                , button
+                    [ class "btn-name-save"
+                    , onClick (SaveFeedName url)
+                    , title "Save"
+                    ]
+                    [ text "✓" ]
+                , button
+                    [ class "btn-name-cancel"
+                    , onClick CancelFeedNameEdit
+                    , title "Cancel"
+                    ]
+                    [ text "✗" ]
+                ]
+
+          else
+            button
+                [ classList
+                    [ ( "feed-nav-item", True )
+                    , ( "active", isActive )
+                    , ( "has-error", hasError )
+                    ]
+                , onClick (SetFilter (ByFeed url))
+                , title feedTitle
+                ]
+                [ span [ class "feed-nav-icon" ]
+                    [ if isLoading then
+                        span [ class "spinner" ] [ text "⟳" ]
+
+                      else if hasError then
+                        span [ class "error-icon" ] [ text "!" ]
+
+                      else
+                        text "○"
+                    ]
+                , span [ class "feed-nav-title", title url ] [ text feedTitle ]
+                , if unreadCount > 0 then
+                    span [ class "badge" ] [ text (String.fromInt unreadCount) ]
 
                   else
-                    text "○"
+                    text ""
                 ]
-            , span [ class "feed-nav-title", title url ] [ text feedTitle ]
-            , if unreadCount > 0 then
-                span [ class "badge" ] [ text (String.fromInt unreadCount) ]
+        , if not isEditing then
+            div [ class "feed-item-actions" ]
+                [ button
+                    [ class "btn-edit-name"
+                    , onClick (StartEditFeedName url)
+                    , title "Rename feed"
+                    ]
+                    [ text "✎" ]
+                , if hasCustomName then
+                    button
+                        [ class "btn-edit-name"
+                        , onClick (ResetFeedName url)
+                        , title "Reset to original name"
+                        ]
+                        [ text "↺" ]
 
-              else
-                text ""
-            ]
-        , if not (Dict.isEmpty model.topics) then
-            select
-                [ class "topic-select"
-                , onInput (AssignFeedToTopic url)
-                , title "Assign to topic"
-                ]
-                (option [ value "", selected (currentTopic == "") ] [ text "—" ]
-                    :: List.map
-                        (\topicName ->
-                            option
-                                [ value topicName
-                                , selected (currentTopic == topicName)
-                                ]
-                                [ text topicName ]
+                  else
+                    text ""
+                , if not (Dict.isEmpty model.topics) then
+                    select
+                        [ class "topic-select"
+                        , onInput (AssignFeedToTopic url)
+                        , title "Assign to topic"
+                        ]
+                        (option [ value "", selected (currentTopic == "") ] [ text "—" ]
+                            :: List.map
+                                (\topicName ->
+                                    option
+                                        [ value topicName
+                                        , selected (currentTopic == topicName)
+                                        ]
+                                        [ text topicName ]
+                                )
+                                (Dict.keys model.topics |> List.sort)
                         )
-                        (Dict.keys model.topics |> List.sort)
-                )
+
+                  else
+                    text ""
+                , button
+                    [ class "btn-remove"
+                    , onClick (RemoveFeed url)
+                    , title ("Remove \"" ++ feedTitle ++ "\"")
+                    ]
+                    [ text "×" ]
+                ]
 
           else
             text ""
-        , button
-            [ class "btn-remove"
-            , onClick (RemoveFeed url)
-            , title ("Remove \"" ++ feedTitle ++ "\"")
-            ]
-            [ text "×" ]
         ]
 
 
@@ -1244,8 +1384,7 @@ viewMainHeader model =
                     "All Articles"
 
                 ByFeed url ->
-                    Dict.get url model.feedTitles
-                        |> Maybe.withDefault (shortenUrl url)
+                    displayFeedTitle model url
 
                 ByLabel label ->
                     label
