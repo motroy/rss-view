@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.motroy.rssview",
+  "appName": "RSS View",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

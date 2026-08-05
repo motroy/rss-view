@@ -1,0 +1,12 @@
+{
+  "name": "rss-view",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A clean RSS feed reader built with Elm.",
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  }
+}
