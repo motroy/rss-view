@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>RSS View</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -94,6 +94,7 @@
       display: grid;
       grid-template-columns: var(--sidebar-w) 1fr;
       height: 100vh;
+      padding-top: env(safe-area-inset-top);
     }
 
     .app.sidebar-mini {
@@ -987,7 +988,7 @@
     /* ── Theme toggle ──────────────────────────────── */
     .theme-toggle-btn {
       position: fixed;
-      top: 12px;
+      top: calc(12px + env(safe-area-inset-top));
       right: 16px;
       z-index: 100;
       background: var(--surface);
