@@ -2,3 +2,8 @@ elm-stuff/
 dist/
 elm.js
 node_modules/
+
+# Capacitor / Android (generated in CI)
+android/
+www/
+package-lock.json
