@@ -2,6 +2,7 @@ port module Main exposing (main)
 
 import Browser
 import Dict exposing (Dict)
+import File exposing (File)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -9,6 +10,7 @@ import Http
 import Json.Decode as D exposing (Decoder)
 import Json.Encode as E
 import Set exposing (Set)
+import Task
 import Url
 
 
@@ -46,6 +48,9 @@ port saveLabelColors : E.Value -> Cmd msg
 
 
 port setTheme : String -> Cmd msg
+
+
+port downloadFile : E.Value -> Cmd msg
 
 
 
@@ -97,6 +102,9 @@ type alias Model =
     , tabColors : Dict String String
     , labelColors : Dict String String
     , colorPickerFor : Maybe String
+    , showExportImport : Bool
+    , importText : String
+    , importMessage : Maybe String
     }
 
 
@@ -186,6 +194,9 @@ init flags =
       , tabColors = tabColors
       , labelColors = labelColors
       , colorPickerFor = Nothing
+      , showExportImport = False
+      , importText = ""
+      , importMessage = Nothing
       }
     , Cmd.batch (List.map fetchFeed feedUrls)
     )
@@ -231,6 +242,14 @@ type Msg
     | ClearLabelColor String
     | OpenColorPicker String
     | CloseColorPicker
+    | OpenExportImport
+    | CloseExportImport
+    | DownloadExport
+    | ImportTextChanged String
+    | ImportFileSelected File
+    | GotImportFileContents String
+    | ImportFeeds
+    | NoOp
 
 
 type alias RssFeedResponse =
@@ -706,6 +725,94 @@ update msg model =
         CloseColorPicker ->
             ( { model | colorPickerFor = Nothing }, Cmd.none )
 
+        OpenExportImport ->
+            ( { model | showExportImport = True, importText = "", importMessage = Nothing }, Cmd.none )
+
+        CloseExportImport ->
+            ( { model | showExportImport = False }, Cmd.none )
+
+        DownloadExport ->
+            ( model
+            , downloadFile
+                (E.object
+                    [ ( "filename", E.string "rss-view-feeds.json" )
+                    , ( "content", E.string (E.encode 2 (encodeExport model)) )
+                    ]
+                )
+            )
+
+        ImportTextChanged text ->
+            ( { model | importText = text, importMessage = Nothing }, Cmd.none )
+
+        ImportFileSelected file ->
+            ( model, Task.perform GotImportFileContents (File.toString file) )
+
+        GotImportFileContents contents ->
+            ( { model | importText = contents, importMessage = Nothing }, Cmd.none )
+
+        ImportFeeds ->
+            case D.decodeString importDecoder model.importText of
+                Err err ->
+                    ( { model | importMessage = Just ("Couldn't read that — " ++ D.errorToString err) }
+                    , Cmd.none
+                    )
+
+                Ok imported ->
+                    let
+                        addedUrls =
+                            List.filter (\u -> not (List.member u model.feedUrls)) imported.feedUrls
+
+                        newUrls =
+                            model.feedUrls ++ addedUrls
+
+                        newCustomFeedTitles =
+                            Dict.union model.customFeedTitles imported.customFeedTitles
+
+                        newTopics =
+                            Dict.foldl
+                                (\topicName urls acc ->
+                                    let
+                                        existing =
+                                            Maybe.withDefault [] (Dict.get topicName acc)
+
+                                        merged =
+                                            existing ++ List.filter (\u -> not (List.member u existing)) urls
+                                    in
+                                    Dict.insert topicName merged acc
+                                )
+                                model.topics
+                                imported.topics
+                    in
+                    ( { model
+                        | feedUrls = newUrls
+                        , customFeedTitles = newCustomFeedTitles
+                        , topics = newTopics
+                        , loading = Set.union model.loading (Set.fromList addedUrls)
+                        , importMessage =
+                            Just
+                                ("Imported "
+                                    ++ String.fromInt (List.length addedUrls)
+                                    ++ " new feed(s)."
+                                    ++ (if List.length addedUrls < List.length imported.feedUrls then
+                                            " (" ++ String.fromInt (List.length imported.feedUrls - List.length addedUrls) ++ " already added)"
+
+                                        else
+                                            ""
+                                       )
+                                )
+                      }
+                    , Cmd.batch
+                        ([ saveFeedUrls (E.list E.string newUrls)
+                         , saveCustomFeedTitles (E.dict identity E.string newCustomFeedTitles)
+                         , saveTopics (E.dict identity (E.list E.string) newTopics)
+                         ]
+                            ++ List.map fetchFeed addedUrls
+                        )
+                    )
+
+        NoOp ->
+            ( model, Cmd.none )
+
 
 
 -- HELPERS
@@ -714,6 +821,29 @@ update msg model =
 presetColors : List String
 presetColors =
     [ "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280" ]
+
+
+encodeExport : Model -> E.Value
+encodeExport model =
+    E.object
+        [ ( "version", E.int 1 )
+        , ( "feedUrls", E.list E.string model.feedUrls )
+        , ( "customFeedTitles", E.dict identity E.string model.customFeedTitles )
+        , ( "topics", E.dict identity (E.list E.string) model.topics )
+        ]
+
+
+importDecoder : Decoder { feedUrls : List String, customFeedTitles : Dict String String, topics : Dict String (List String) }
+importDecoder =
+    D.map3 (\f t p -> { feedUrls = f, customFeedTitles = t, topics = p })
+        (D.field "feedUrls" (D.list D.string))
+        (D.oneOf [ D.field "customFeedTitles" (D.dict D.string), D.succeed Dict.empty ])
+        (D.oneOf [ D.field "topics" (D.dict (D.list D.string)), D.succeed Dict.empty ])
+
+
+importFileDecoder : Decoder Msg
+importFileDecoder =
+    D.at [ "target", "files" ] (D.index 0 File.decoder) |> D.map ImportFileSelected
 
 
 sortArticles : List Article -> List Article
@@ -969,6 +1099,67 @@ view model =
             , title (if model.darkMode then "Switch to light mode" else "Switch to dark mode")
             ]
             [ text (if model.darkMode then "☀" else "☽") ]
+        , if model.showExportImport then
+            viewExportImportModal model
+
+          else
+            text ""
+        ]
+
+
+viewExportImportModal : Model -> Html Msg
+viewExportImportModal model =
+    div [ class "modal-backdrop", onClick CloseExportImport ]
+        [ div [ class "modal", stopPropagationOn "click" (D.succeed ( NoOp, True )) ]
+            [ div [ class "modal-header" ]
+                [ h2 [] [ text "Export / import feeds" ]
+                , button [ class "btn-icon", onClick CloseExportImport, title "Close" ] [ text "×" ]
+                ]
+            , div [ class "modal-body" ]
+                [ div [ class "modal-section" ]
+                    [ h3 [] [ text "Export" ]
+                    , p [ class "modal-hint" ]
+                        [ text "Download this as a file, or copy the text below, then import it on your other device." ]
+                    , button [ class "btn-ghost", onClick DownloadExport ] [ text "⬇ Download rss-view-feeds.json" ]
+                    , textarea
+                        [ readonly True
+                        , class "export-import-textarea"
+                        , value (E.encode 2 (encodeExport model))
+                        ]
+                        []
+                    ]
+                , div [ class "modal-section" ]
+                    [ h3 [] [ text "Import" ]
+                    , p [ class "modal-hint" ]
+                        [ text "Choose a previously exported file, or paste its contents below, then tap Import." ]
+                    , input
+                        [ type_ "file"
+                        , accept ".json,application/json"
+                        , on "change" importFileDecoder
+                        ]
+                        []
+                    , textarea
+                        [ placeholder "Paste exported JSON here…"
+                        , class "export-import-textarea"
+                        , value model.importText
+                        , onInput ImportTextChanged
+                        ]
+                        []
+                    , button
+                        [ class "btn-add"
+                        , onClick ImportFeeds
+                        , disabled (String.isEmpty (String.trim model.importText))
+                        ]
+                        [ text "Import" ]
+                    , case model.importMessage of
+                        Just msg ->
+                            div [ class "import-message" ] [ text msg ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+            ]
         ]
 
 
@@ -1043,6 +1234,12 @@ viewSidebar model =
                 , title "Refresh all feeds"
                 ]
                 [ text "↻" ]
+            , button
+                [ class "btn-icon"
+                , onClick OpenExportImport
+                , title "Export / import feeds"
+                ]
+                [ text "⇄" ]
             , button
                 [ class "btn-icon"
                 , onClick ToggleSidebar
