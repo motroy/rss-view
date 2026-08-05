@@ -49,14 +49,46 @@ jobs:
       - name: Sync web assets into Android project
         run: npx cap sync android
 
-      - name: Build APK
+      - name: Check for release signing secrets
+        id: signing
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and sign release APK
+        if: steps.signing.outputs.has_keystore == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          cd ..
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS_DIR=$(ls "$SDK_ROOT/build-tools" | sort -V | tail -1)
+          "$SDK_ROOT/build-tools/$BUILD_TOOLS_DIR/zipalign" -p -f 4 \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          "$SDK_ROOT/build-tools/$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks release.keystore --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD --ks-key-alias "$KEY_ALIAS" \
+            --out rss-view.apk aligned.apk
+          rm -f release.keystore aligned.apk
+
+      - name: Build debug APK (no release signing secrets configured)
+        if: steps.signing.outputs.has_keystore != 'true'
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
-
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk rss-view.apk
+          cd ..
+          cp android/app/build/outputs/apk/debug/app-debug.apk rss-view.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
