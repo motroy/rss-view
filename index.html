@@ -1293,6 +1293,61 @@
         }
       });
 
+      app.ports.fetchFeedDirect.subscribe(async url => {
+        const send = payload => app.ports.gotFeedDirect.send(Object.assign({ url }, payload));
+        const text = el => (el && el.textContent ? el.textContent.trim() : '');
+        const parse = xml => {
+          const doc = new DOMParser().parseFromString(xml, 'text/xml');
+          if (doc.querySelector('parsererror')) throw new Error('not valid XML');
+          const kids = (node, name) => Array.from(node.children).filter(c => c.localName === name);
+          const first = (node, name) => kids(node, name)[0];
+          const channel = doc.querySelector('channel');
+          if (channel) {
+            return {
+              feed: { title: text(first(channel, 'title')) || url, url },
+              items: Array.from(channel.querySelectorAll('item')).map(i => ({
+                title: text(first(i, 'title')),
+                link: text(first(i, 'link')),
+                description: text(first(i, 'description')),
+                content: text(first(i, 'encoded')) || text(first(i, 'description')),
+                pubDate: text(first(i, 'pubDate')) || text(first(i, 'date')),
+                author: text(first(i, 'creator')) || text(first(i, 'author'))
+              }))
+            };
+          }
+          const feed = doc.querySelector('feed');
+          if (!feed) throw new Error('not an RSS or Atom feed');
+          return {
+            feed: { title: text(first(feed, 'title')) || url, url },
+            items: kids(feed, 'entry').map(e => {
+              const links = kids(e, 'link');
+              const link = links.find(l => (l.getAttribute('rel') || 'alternate') === 'alternate') || links[0];
+              const author = first(e, 'author');
+              return {
+                title: text(first(e, 'title')),
+                link: link ? link.getAttribute('href') || '' : '',
+                description: text(first(e, 'summary')),
+                content: text(first(e, 'content')) || text(first(e, 'summary')),
+                pubDate: text(first(e, 'published')) || text(first(e, 'updated')),
+                author: author ? text(first(author, 'name')) : ''
+              };
+            })
+          };
+        };
+        const attempts = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+        let lastError = 'unreachable';
+        for (const target of attempts) {
+          try {
+            const res = await fetch(target);
+            if (!res.ok) { lastError = 'HTTP ' + res.status; continue; }
+            return send(parse(await res.text()));
+          } catch (e) {
+            lastError = e.message || String(e);
+          }
+        }
+        send({ error: 'Could not load feed (' + lastError + ')' });
+      });
+
       app.ports.saveFeedUrls.subscribe(urls => {
         localStorage.setItem(KEY_FEEDS, JSON.stringify(urls));
       });

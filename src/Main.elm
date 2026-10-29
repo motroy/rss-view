@@ -51,6 +51,12 @@ port saveLabelColors : E.Value -> Cmd msg
 port setTheme : String -> Cmd msg
 
 
+port fetchFeedDirect : String -> Cmd msg
+
+
+port gotFeedDirect : (E.Value -> msg) -> Sub msg
+
+
 port downloadFile : E.Value -> Cmd msg
 
 
@@ -64,7 +70,7 @@ main =
         { init = init
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = \_ -> gotFeedDirect GotFeedDirect
         }
 
 
@@ -218,6 +224,7 @@ type Msg
     | RefreshAll
     | RefreshFeed String
     | RefreshFeedQuiet String
+    | GotFeedDirect E.Value
     | ToggleSidebar
     | SelectArticle Article
     | CloseTab String
@@ -369,13 +376,26 @@ update msg model =
                     , Cmd.none
                     )
 
-                Err err ->
+                Err _ ->
+                    -- rss2json failed (rate limit, blocked host, ...): let JS
+                    -- fetch and parse the feed directly in the browser.
+                    ( model, fetchFeedDirect url )
+
+        GotFeedDirect value ->
+            case D.decodeValue directFeedDecoder value of
+                Ok ( url, Ok response ) ->
+                    update (GotFeed url (Ok response)) model
+
+                Ok ( url, Err message ) ->
                     ( { model
                         | loading = Set.remove url model.loading
-                        , errors = Dict.insert url (httpErrorToString err) model.errors
+                        , errors = Dict.insert url message model.errors
                       }
                     , Cmd.none
                     )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         MarkRead link ->
             let
@@ -922,7 +942,7 @@ httpErrorToString err =
             "Request timed out"
 
         Http.NetworkError ->
-            "Network error (rate-limited, CORS or bad feed URL) - try Retry"
+            "Network error (check CORS or feed URL)"
 
         Http.BadStatus status ->
             "Server error: " ++ String.fromInt status
@@ -1070,6 +1090,18 @@ fetchFeed url =
         { url = "https://api.rss2json.com/v1/api.json?rss_url=" ++ Url.percentEncode url
         , expect = Http.expectJson (GotFeed url) feedDecoder
         }
+
+
+directFeedDecoder : Decoder ( String, Result String RssFeedResponse )
+directFeedDecoder =
+    D.field "url" D.string
+        |> D.andThen
+            (\url ->
+                D.oneOf
+                    [ D.field "error" D.string |> D.map (\e -> ( url, Err e ))
+                    , feedDecoder |> D.map (\r -> ( url, Ok r ))
+                    ]
+            )
 
 
 feedDecoder : Decoder RssFeedResponse
