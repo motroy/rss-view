@@ -1293,6 +1293,9 @@
         }
       });
 
+      // Set to your deployed Worker URL, e.g. 'https://rss-view-proxy.<account>.workers.dev/'
+      window.FEED_PROXY_URL = window.FEED_PROXY_URL || '';
+
       app.ports.fetchFeedDirect.subscribe(async url => {
         const send = payload => app.ports.gotFeedDirect.send(Object.assign({ url }, payload));
         const text = el => (el && el.textContent ? el.textContent.trim() : '');
@@ -1334,7 +1337,9 @@
             })
           };
         };
-        const attempts = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+        const attempts = [];
+        if (window.FEED_PROXY_URL) attempts.push(window.FEED_PROXY_URL + '?url=' + encodeURIComponent(url));
+        attempts.push(url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
         let lastError = 'unreachable';
         for (const target of attempts) {
           try {
