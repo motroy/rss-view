@@ -71,7 +71,7 @@ jobs:
           node-version: '20'
 
       - name: Install Elm
-        run: npm install -g elm
+        run: npm install -g elm@0.19.2-0
 
       - name: Build Elm app
         run: |
