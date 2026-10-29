@@ -9,6 +9,7 @@ import Html.Events exposing (..)
 import Http
 import Json.Decode as D exposing (Decoder)
 import Json.Encode as E
+import Process
 import Set exposing (Set)
 import Task
 import Url
@@ -198,7 +199,7 @@ init flags =
       , importText = ""
       , importMessage = Nothing
       }
-    , Cmd.batch (List.map fetchFeed feedUrls)
+    , fetchFeeds feedUrls
     )
 
 
@@ -216,6 +217,7 @@ type Msg
     | SetFilter FeedFilter
     | RefreshAll
     | RefreshFeed String
+    | RefreshFeedQuiet String
     | ToggleSidebar
     | SelectArticle Article
     | CloseTab String
@@ -401,8 +403,11 @@ update msg model =
 
         RefreshAll ->
             ( { model | loading = Set.fromList model.feedUrls }
-            , Cmd.batch (List.map fetchFeed model.feedUrls)
+            , fetchFeeds model.feedUrls
             )
+
+        RefreshFeedQuiet url ->
+            ( model, fetchFeed url )
 
         RefreshFeed url ->
             ( { model | loading = Set.insert url model.loading }
@@ -806,7 +811,7 @@ update msg model =
                          , saveCustomFeedTitles (E.dict identity E.string newCustomFeedTitles)
                          , saveTopics (E.dict identity (E.list E.string) newTopics)
                          ]
-                            ++ List.map fetchFeed addedUrls
+                            ++ [ fetchFeeds addedUrls ]
                         )
                     )
 
@@ -917,7 +922,7 @@ httpErrorToString err =
             "Request timed out"
 
         Http.NetworkError ->
-            "Network error (check CORS or feed URL)"
+            "Network error (rate-limited, CORS or bad feed URL) - try Retry"
 
         Http.BadStatus status ->
             "Server error: " ++ String.fromInt status
@@ -1038,6 +1043,25 @@ monthName m =
 
 
 -- HTTP
+
+
+{-| Fetch many feeds with a small delay between requests. The rss2json API
+rate-limits bursts and its error responses lack CORS headers, which the browser
+reports as a generic network error.
+-}
+fetchFeeds : List String -> Cmd Msg
+fetchFeeds urls =
+    urls
+        |> List.indexedMap
+            (\i url ->
+                if i == 0 then
+                    fetchFeed url
+
+                else
+                    Process.sleep (toFloat i * 600)
+                        |> Task.perform (\_ -> RefreshFeedQuiet url)
+            )
+        |> Cmd.batch
 
 
 fetchFeed : String -> Cmd Msg
